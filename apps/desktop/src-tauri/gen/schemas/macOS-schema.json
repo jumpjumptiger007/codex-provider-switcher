@@ -201,6 +201,18 @@
           "markdownDescription": "Enables the get_status command without any pre-configured scope."
         },
         {
+          "description": "Enables the restore_config command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-restore-config",
+          "markdownDescription": "Enables the restore_config command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the run_doctor command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-run-doctor",
+          "markdownDescription": "Enables the run_doctor command without any pre-configured scope."
+        },
+        {
           "description": "Enables the save_credential command without any pre-configured scope.",
           "type": "string",
           "const": "allow-save-credential",
@@ -235,6 +247,18 @@
           "type": "string",
           "const": "deny-get-status",
           "markdownDescription": "Denies the get_status command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the restore_config command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-restore-config",
+          "markdownDescription": "Denies the restore_config command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the run_doctor command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-run-doctor",
+          "markdownDescription": "Denies the run_doctor command without any pre-configured scope."
         },
         {
           "description": "Denies the save_credential command without any pre-configured scope.",

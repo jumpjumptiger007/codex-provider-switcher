@@ -1,3 +1,5 @@
+pub(crate) mod safety;
+
 use std::path::Path;
 
 use cps::{
@@ -352,7 +354,13 @@ fn error(code: &str) -> DesktopError {
         "invalid_model" => "Enter a non-empty model ID.",
         "config_missing" => "Codex configuration was not found.",
         "config_invalid" => "Codex configuration is missing a valid active provider or model.",
-        "config_conflict" => "Codex configuration changed outside CPS. Refresh the current setup before trying again.",
+        "config_conflict" => "Codex configuration changed outside CPS. CPS did not overwrite it. Refresh the current setup before trying again.",
+        "doctor_unavailable" => "Local diagnostics could not access the Codex configuration location.",
+        "no_recovery_backup" => "No CPS recovery backup was found.",
+        "ambiguous_recovery_backup" => "The newest recovery backup is ambiguous. No configuration was restored.",
+        "recovery_invalid" => "The newest recovery backup is not valid UTF-8 or TOML. No configuration was restored.",
+        "restore_unavailable" => "The configuration or recovery backups could not be accessed. Check local file access and try again.",
+        "restore_failed" => "Configuration could not be restored. Try again.",
         "switch_failed" => "The model switch failed. Current setup was not confirmed; refresh before retrying.",
         _ => "This operation could not be completed. Try again.",
     };

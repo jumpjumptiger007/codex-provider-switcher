@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
+  asDesktopError,
   getCredentialStatus,
   getModels,
   getProviders,
@@ -8,6 +9,9 @@ import {
   switchModel,
 } from "./lib/cps";
 import type { DesktopError } from "./lib/cps";
+import DiagnosticsPanel from "./components/DiagnosticsPanel";
+import RecoveryPanel from "./components/RecoveryPanel";
+import { useConfigMutation } from "./hooks/useConfigMutation";
 import ProviderMark from "./components/ProviderMark";
 import ProviderDetails from "./components/ProviderDetails";
 import type { CredentialOperation } from "./components/ProviderDetails";
@@ -55,7 +59,7 @@ export default function App() {
   const credentialRequest = useRef(0);
   const modelsRequest = useRef(0);
   const switchRequest = useRef(0);
-  const switchInFlight = useRef(false);
+  const { operation: configMutation, revision, begin, end, invalidate } = useConfigMutation();
   const statusRequest = useRef(0);
 
   const loadProviders = useCallback(() => {
@@ -84,7 +88,7 @@ export default function App() {
     const requestId = ++statusRequest.current;
     setStatusLoading(true);
     setStatusError(null);
-    getStatus()
+    return getStatus()
       .then((current) => {
         if (statusRequest.current !== requestId) return;
         statusSnapshot.current = current;
@@ -102,7 +106,11 @@ export default function App() {
         }
       })
       .catch((reason: DesktopError) => {
-        if (statusRequest.current === requestId) setStatusError(reason);
+        if (statusRequest.current === requestId) {
+          statusSnapshot.current = null;
+          setStatus(null);
+          setStatusError(asDesktopError(reason));
+        }
       })
       .finally(() => {
         if (statusRequest.current === requestId) setStatusLoading(false);
@@ -147,6 +155,7 @@ export default function App() {
       setCredentialError(null);
       try {
         const result = await saveCredential(providerId, credential);
+        invalidate();
         if (
           credentialRequest.current === requestId &&
           selectedProviderRef.current === providerId
@@ -166,7 +175,7 @@ export default function App() {
         if (credentialRequest.current === requestId) setCredentialOperation(null);
       }
     },
-    [],
+    [invalidate],
   );
 
   const loadProviderModels = useCallback(async (providerId: string) => {
@@ -209,11 +218,10 @@ export default function App() {
     async (providerId: string, modelId: string) => {
       if (
         selectedProviderRef.current !== providerId ||
-        switchInFlight.current
+        !begin("switch")
       ) {
         return;
       }
-      switchInFlight.current = true;
       const requestId = ++switchRequest.current;
       setSwitchOperation(providerId);
       setSwitchError(null);
@@ -237,14 +245,22 @@ export default function App() {
           }
         }
       } finally {
+        end();
         if (switchRequest.current === requestId) {
-          switchInFlight.current = false;
           setSwitchOperation(null);
         }
       }
     },
-    [],
+    [begin, end],
   );
+
+  function handleRestored() {
+    setSwitchSuccess(null);
+    setSwitchError(null);
+    // Restoring can change the active provider, but preserve the inspected provider.
+    if (selectedProviderRef.current !== null) selectedByUser.current = true;
+    void loadStatus();
+  }
 
   function handleProviderSelect(provider: Provider) {
     selectedByUser.current = true;
@@ -340,7 +356,7 @@ export default function App() {
           <ul className="provider-grid" aria-label="Choose a provider to inspect">
             {providers.map((provider) => {
               const isSelected = selectedProvider === provider.id;
-              const isActive = status?.knownProvider && status.provider === provider.id;
+              const isActive = !statusLoading && !statusError && status?.knownProvider && status.provider === provider.id;
               return (
                 <li key={provider.id}>
                   <button
@@ -383,6 +399,7 @@ export default function App() {
             }
             nativeModel={nativeModels[selected.id] ?? ""}
             switchPending={switchOperation !== null}
+            configMutationRunning={configMutation !== null}
             switchError={switchError}
             successTarget={
               switchSuccess?.providerId === selected.id ? switchSuccess.target : null
@@ -410,25 +427,16 @@ export default function App() {
           </div>
         )}
       </section>
+
+      <DiagnosticsPanel revision={revision} mutationRunning={configMutation !== null} />
+      <RecoveryPanel
+        mutationRunning={configMutation !== null}
+        beginRestore={() => begin("restore")}
+        endRestore={end}
+        onRestored={handleRestored}
+      />
     </main>
   );
-}
-
-function asDesktopError(reason: unknown): DesktopError {
-  if (
-    typeof reason === "object" &&
-    reason !== null &&
-    "code" in reason &&
-    typeof reason.code === "string" &&
-    "message" in reason &&
-    typeof reason.message === "string"
-  ) {
-    return { code: reason.code, message: reason.message };
-  }
-  return {
-    code: "internal_error",
-    message: "This operation could not be completed. Try again.",
-  };
 }
 
 function transportLabel(transport: Provider["transport"]): string {

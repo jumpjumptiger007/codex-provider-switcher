@@ -1,6 +1,8 @@
 import { invoke } from "@tauri-apps/api/core";
 import type { CredentialStatus, Model, Provider, Status } from "../types/provider";
 
+import type { DoctorReport, RestoreResult } from "../types/safety";
+
 export interface DesktopError {
   code: string;
   message: string;
@@ -34,6 +36,19 @@ export function getModels(providerId: string): Promise<Model[]> {
 
 export function switchModel(providerId: string, modelId: string): Promise<Status> {
   return invokeDesktop<Status>("switch_model", { providerId, modelId });
+}
+
+export function runDoctor(): Promise<DoctorReport> {
+  return invokeDesktop<DoctorReport>("run_doctor");
+}
+
+export function restoreConfig(): Promise<RestoreResult> {
+  return invokeDesktop<RestoreResult>("restore_config");
+}
+
+export function asDesktopError(reason: unknown): DesktopError {
+  if (isDesktopError(reason)) return { code: reason.code, message: reason.message };
+  return { code: "internal_error", message: "This operation could not be completed. Try again." };
 }
 
 function invokeDesktop<T>(command: string, args?: Record<string, unknown>): Promise<T> {

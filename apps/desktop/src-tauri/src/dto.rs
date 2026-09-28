@@ -46,3 +46,36 @@ pub struct DesktopError {
     pub code: String,
     pub message: String,
 }
+
+/// Severity is a closed Desktop contract, independent of the core Rust enum.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum DoctorSeverityDto {
+    Ok,
+    Info,
+    Warning,
+    Error,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DoctorFindingDto {
+    pub check: String,
+    pub severity: DoctorSeverityDto,
+    pub message: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DoctorReportDto {
+    pub findings: Vec<DoctorFindingDto>,
+    pub has_errors: bool,
+}
+
+/// Both fields contain filenames only, never absolute config or home paths.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RestoreResultDto {
+    pub restored_from: String,
+    pub recovery_backup: String,
+}

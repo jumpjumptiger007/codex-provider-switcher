@@ -24,6 +24,7 @@ export interface ProviderDetailsProps {
   selectedModel: string;
   nativeModel: string;
   switchPending: boolean;
+  configMutationRunning: boolean;
   switchError: ProviderOperationError | null;
   successTarget: string | null;
   onCheckCredential: () => void;
@@ -45,6 +46,7 @@ export default function ProviderDetails({
   selectedModel,
   nativeModel,
   switchPending,
+  configMutationRunning,
   switchError,
   successTarget,
   onCheckCredential,
@@ -70,8 +72,8 @@ export default function ProviderDetails({
     models !== null &&
     selectedModel.length > 0 &&
     !modelsLoading &&
-    !switchPending;
-  const canSwitchNative = nativeModel.trim().length > 0 && !switchPending;
+    !configMutationRunning;
+  const canSwitchNative = nativeModel.trim().length > 0 && !configMutationRunning;
 
   return (
     <article className="details-card" aria-live="polite">

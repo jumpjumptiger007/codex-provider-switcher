@@ -7,6 +7,8 @@ fn main() {
             "save_credential",
             "get_models",
             "switch_model",
+            "run_doctor",
+            "restore_config",
         ]),
     ))
     .expect("failed to build Tauri application metadata");
