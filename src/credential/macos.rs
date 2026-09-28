@@ -3,11 +3,10 @@ use security_framework::{
     passwords::{PasswordOptions, delete_generic_password, generic_password, set_generic_password},
 };
 
-use crate::provider::CredentialSlotId;
+use crate::{credential::CPS_KEYCHAIN_SERVICE, provider::CredentialSlotId};
 
 use super::{CredentialOperation, CredentialStore, CredentialStoreError, SecretValue};
 
-const SERVICE_NAMESPACE: &str = "codex-provider-switcher";
 // OSStatus for Apple's errSecItemNotFound.
 const ERR_SEC_ITEM_NOT_FOUND: i32 = -25_300;
 
@@ -64,7 +63,7 @@ impl CredentialStore for MacOsKeychainStore {
 }
 
 fn keychain_identity(slot: &CredentialSlotId) -> (&'static str, &str) {
-    (SERVICE_NAMESPACE, slot.as_str())
+    (CPS_KEYCHAIN_SERVICE, slot.as_str())
 }
 
 fn is_item_not_found(error: &SecurityFrameworkError) -> bool {
@@ -74,16 +73,16 @@ fn is_item_not_found(error: &SecurityFrameworkError) -> bool {
 #[cfg(test)]
 mod tests {
     use super::{
-        ERR_SEC_ITEM_NOT_FOUND, SERVICE_NAMESPACE, SecurityFrameworkError, is_item_not_found,
-        keychain_identity,
+        ERR_SEC_ITEM_NOT_FOUND, SecurityFrameworkError, is_item_not_found, keychain_identity,
     };
+    use crate::credential::CPS_KEYCHAIN_SERVICE;
     use crate::provider::CredentialSlotId;
 
     #[test]
     fn slot_mapping_uses_only_the_cps_service_and_requested_account() {
         let slot = CredentialSlotId::new("deepseek").unwrap();
 
-        assert_eq!(keychain_identity(&slot), (SERVICE_NAMESPACE, "deepseek"));
+        assert_eq!(keychain_identity(&slot), (CPS_KEYCHAIN_SERVICE, "deepseek"));
     }
 
     #[test]

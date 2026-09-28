@@ -6,7 +6,9 @@ use std::{
 
 use sha2::{Digest, Sha256};
 use tempfile::NamedTempFile;
-use toml_edit::{DocumentMut, TomlError, value};
+use toml_edit::{Array, DocumentMut, Item, Table, TomlError, value};
+
+use crate::{auth_command::AuthCommand, provider::CodexCustomProviderDefinition};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ActiveSelection {
@@ -39,27 +41,52 @@ pub fn update_active_selection(
     config_path: impl AsRef<Path>,
     selection: &ActiveSelection,
 ) -> Result<TransactionResult, ConfigError> {
-    update_active_selection_inner(config_path.as_ref(), selection, || {})
+    update_document(
+        config_path.as_ref(),
+        |document| {
+            set_active_selection(document, selection);
+            Ok(())
+        },
+        || {},
+    )
 }
 
-fn update_active_selection_inner(
-    config_path: &Path,
+pub fn update_provider_and_selection(
+    config_path: impl AsRef<Path>,
     selection: &ActiveSelection,
+    definition: &CodexCustomProviderDefinition,
+    auth_command: &AuthCommand,
+) -> Result<TransactionResult, ConfigError> {
+    update_document(
+        config_path.as_ref(),
+        |document| {
+            ensure_provider_definition(document, definition, auth_command)?;
+            set_active_selection(document, selection);
+            Ok(())
+        },
+        || {},
+    )
+}
+
+fn set_active_selection(document: &mut DocumentMut, selection: &ActiveSelection) {
+    document["model"] = value(&selection.model);
+    document["model_provider"] = value(&selection.model_provider);
+}
+
+fn update_document(
+    config_path: &Path,
+    mutation: impl FnOnce(&mut DocumentMut) -> Result<(), ConfigError>,
     before_conflict_check: impl FnOnce(),
 ) -> Result<TransactionResult, ConfigError> {
-    let original_bytes = fs::read(config_path).map_err(|source| ConfigError::Read {
-        path: config_path.to_owned(),
-        source,
-    })?;
+    let original_bytes = read_config(config_path)?;
     let original_digest = digest(&original_bytes);
     let original_text = std::str::from_utf8(&original_bytes).map_err(ConfigError::Utf8)?;
     let mut document = original_text
         .parse::<DocumentMut>()
         .map_err(ConfigError::Toml)?;
-
-    document["model"] = value(&selection.model);
-    document["model_provider"] = value(&selection.model_provider);
+    mutation(&mut document)?;
     let rendered = document.to_string();
+    rendered.parse::<DocumentMut>().map_err(ConfigError::Toml)?;
 
     let parent = config_path
         .parent()
@@ -81,24 +108,33 @@ fn update_active_selection_inner(
         .map_err(ConfigError::Write)?;
     fs::set_permissions(temp_file.path(), metadata.permissions()).map_err(ConfigError::Write)?;
 
+    let backup = prepare_recovery_backup(config_path, &original_bytes)?;
     before_conflict_check();
-    let current_bytes = fs::read(config_path).map_err(|source| ConfigError::Read {
-        path: config_path.to_owned(),
-        source,
-    })?;
+    let current_bytes = match read_config(config_path) {
+        Ok(bytes) => bytes,
+        Err(ConfigError::Missing { .. }) => {
+            return Err(ConfigError::Conflict {
+                path: config_path.to_owned(),
+            });
+        }
+        Err(error) => return Err(error),
+    };
     if digest(&current_bytes) != original_digest {
         return Err(ConfigError::Conflict {
             path: config_path.to_owned(),
         });
     }
 
-    let backup_path = create_recovery_backup(config_path, &original_bytes)?;
     temp_file
         .persist(config_path)
         .map_err(|error| ConfigError::Persist {
             path: config_path.to_owned(),
             source: error.error,
         })?;
+    let (_, backup_path) = backup.keep().map_err(|error| ConfigError::Backup {
+        directory: parent.to_owned(),
+        source: error.error,
+    })?;
 
     let written = fs::read_to_string(config_path).map_err(|source| ConfigError::Read {
         path: config_path.to_owned(),
@@ -109,26 +145,174 @@ fn update_active_selection_inner(
     Ok(TransactionResult { backup_path })
 }
 
+fn read_config(path: &Path) -> Result<Vec<u8>, ConfigError> {
+    fs::read(path).map_err(|source| {
+        if source.kind() == io::ErrorKind::NotFound {
+            ConfigError::Missing {
+                path: path.to_owned(),
+            }
+        } else {
+            ConfigError::Read {
+                path: path.to_owned(),
+                source,
+            }
+        }
+    })
+}
+
 #[doc(hidden)]
 pub mod test_support {
     use std::path::Path;
 
-    use super::{ActiveSelection, ConfigError, TransactionResult, update_active_selection_inner};
+    use super::{
+        ActiveSelection, ConfigError, TransactionResult, set_active_selection, update_document,
+    };
 
     pub fn transaction_with_before_commit(
         config_path: &Path,
         selection: &ActiveSelection,
         before_conflict_check: impl FnOnce(),
     ) -> Result<TransactionResult, ConfigError> {
-        update_active_selection_inner(config_path, selection, before_conflict_check)
+        update_document(
+            config_path,
+            |document| {
+                set_active_selection(document, selection);
+                Ok(())
+            },
+            before_conflict_check,
+        )
     }
 }
+
+fn ensure_provider_definition(
+    document: &mut DocumentMut,
+    definition: &CodexCustomProviderDefinition,
+    auth_command: &AuthCommand,
+) -> Result<(), ConfigError> {
+    let provider_id = definition.provider_id.as_str();
+    let conflict = || ConfigError::ProviderDefinitionConflict {
+        provider_id: provider_id.to_owned(),
+    };
+
+    if let Some(existing_providers) = document.get("model_providers") {
+        let Some(providers) = existing_providers.as_table() else {
+            return Err(conflict());
+        };
+        if let Some(existing) = providers.get(provider_id) {
+            if provider_definition_matches(existing, definition, auth_command) {
+                return Ok(());
+            }
+            return Err(conflict());
+        }
+    }
+
+    let root = document.as_table_mut();
+    if !root.contains_key("model_providers") {
+        root.insert("model_providers", Item::Table(Table::new()));
+    }
+    let providers = root
+        .get_mut("model_providers")
+        .and_then(Item::as_table_mut)
+        .ok_or_else(conflict)?;
+    providers.insert(
+        provider_id,
+        provider_definition_item(definition, auth_command),
+    );
+    Ok(())
+}
+
+fn provider_definition_item(
+    definition: &CodexCustomProviderDefinition,
+    auth_command: &AuthCommand,
+) -> Item {
+    let mut args = Array::new();
+    for argument in &auth_command.args {
+        args.push(argument.clone());
+    }
+
+    let mut auth = Table::new();
+    auth.insert("command", value(auth_command.command));
+    auth.insert("args", value(args));
+    auth.insert(
+        "refresh_interval_ms",
+        value(auth_command.refresh_interval_ms as i64),
+    );
+
+    let mut provider = Table::new();
+    provider.insert("name", value(&definition.display_name));
+    provider.insert("base_url", value(&definition.base_url));
+    provider.insert("wire_api", value(definition.wire_api.as_config_value()));
+    provider.insert("auth", Item::Table(auth));
+    Item::Table(provider)
+}
+
+fn provider_definition_matches(
+    item: &Item,
+    definition: &CodexCustomProviderDefinition,
+    auth_command: &AuthCommand,
+) -> bool {
+    let Some(table) = item.as_table() else {
+        return false;
+    };
+    if table.len() != 4
+        || table.get("name").and_then(Item::as_str) != Some(definition.display_name.as_str())
+        || table.get("base_url").and_then(Item::as_str) != Some(definition.base_url.as_str())
+        || table.get("wire_api").and_then(Item::as_str)
+            != Some(definition.wire_api.as_config_value())
+    {
+        return false;
+    }
+    let Some(auth) = table.get("auth").and_then(Item::as_table) else {
+        return false;
+    };
+    if auth.len() != 3
+        || auth.get("command").and_then(Item::as_str) != Some(auth_command.command)
+        || auth.get("refresh_interval_ms").and_then(Item::as_integer)
+            != Some(auth_command.refresh_interval_ms as i64)
+    {
+        return false;
+    }
+    let expected_args = auth_command
+        .args
+        .iter()
+        .map(String::as_str)
+        .collect::<Vec<_>>();
+    auth.get("args")
+        .and_then(Item::as_array)
+        .is_some_and(|args| {
+            args.len() == expected_args.len()
+                && args
+                    .iter()
+                    .zip(expected_args)
+                    .all(|(actual, expected)| actual.as_str() == Some(expected))
+        })
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ConfigPathError {
+    EmptyCodexHome,
+    HomeUnavailable,
+}
+
+impl fmt::Display for ConfigPathError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::EmptyCodexHome => formatter.write_str("CODEX_HOME is set but empty"),
+            Self::HomeUnavailable => formatter.write_str("HOME is unavailable or empty"),
+        }
+    }
+}
+
+impl std::error::Error for ConfigPathError {}
 
 fn digest(bytes: &[u8]) -> [u8; 32] {
     Sha256::digest(bytes).into()
 }
 
-fn create_recovery_backup(config_path: &Path, contents: &[u8]) -> Result<PathBuf, ConfigError> {
+fn prepare_recovery_backup(
+    config_path: &Path,
+    contents: &[u8],
+) -> Result<NamedTempFile, ConfigError> {
     let parent = config_path
         .parent()
         .ok_or_else(|| ConfigError::MissingParent {
@@ -155,16 +339,18 @@ fn create_recovery_backup(config_path: &Path, contents: &[u8]) -> Result<PathBuf
         .as_file_mut()
         .sync_all()
         .map_err(ConfigError::Write)?;
-    let (_, path) = backup.keep().map_err(|error| ConfigError::Backup {
-        directory: parent.to_owned(),
-        source: error.error,
-    })?;
-    Ok(path)
+    Ok(backup)
 }
 
 #[derive(Debug)]
 pub enum ConfigError {
     EmptySelection,
+    Missing {
+        path: PathBuf,
+    },
+    ProviderDefinitionConflict {
+        provider_id: String,
+    },
     MissingParent {
         path: PathBuf,
     },
@@ -198,6 +384,15 @@ impl fmt::Display for ConfigError {
             Self::EmptySelection => {
                 formatter.write_str("model and model_provider must not be empty")
             }
+            Self::Missing { path } => write!(
+                formatter,
+                "Codex config file does not exist: {}",
+                path.display()
+            ),
+            Self::ProviderDefinitionConflict { provider_id } => write!(
+                formatter,
+                "existing Codex provider definition conflicts with CPS provider {provider_id}"
+            ),
             Self::MissingParent { path } => {
                 write!(formatter, "config path has no parent: {}", path.display())
             }

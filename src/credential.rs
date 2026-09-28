@@ -2,6 +2,8 @@ use std::{error::Error, fmt};
 
 use crate::provider::CredentialSlotId;
 
+pub const CPS_KEYCHAIN_SERVICE: &str = "codex-provider-switcher";
+
 /// A secret held only in process memory and redacted from diagnostic output.
 #[derive(PartialEq, Eq)]
 pub struct SecretValue(String);
