@@ -19,14 +19,11 @@ pub struct Cli {
 #[derive(Debug, Subcommand, PartialEq, Eq)]
 pub enum Command {
     Use { target: ProviderModelTarget },
-    Add { provider: String },
-    Disable { provider: String },
     List,
     Models { provider: Option<String> },
     Status,
     Doctor,
     Auth { provider: String },
-    Bridge,
     Restore,
 }
 
@@ -39,7 +36,6 @@ pub fn execute(cli: Cli) -> Result<(), CliError> {
         Command::Status => show_status(),
         Command::Doctor => run_doctor(),
         Command::Restore => restore_config(),
-        command => Err(CliError::NotImplemented(command)),
     }
 }
 
@@ -287,7 +283,6 @@ fn auth_provider(provider_id: &str) -> Result<(), CliError> {
 
 #[derive(Debug)]
 pub enum CliError {
-    NotImplemented(Command),
     Application(ApplicationError),
     Prompt(std::io::Error),
     DoctorFoundErrors,
@@ -302,9 +297,6 @@ impl CliError {
 impl fmt::Display for CliError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::NotImplemented(command) => {
-                write!(formatter, "{:?} is not implemented", command)
-            }
             Self::Application(error) => error.fmt(formatter),
             Self::Prompt(error) => write!(formatter, "could not read credential securely: {error}"),
             Self::DoctorFoundErrors => {
@@ -324,7 +316,7 @@ impl From<ApplicationError> for CliError {
 
 #[cfg(test)]
 mod tests {
-    use clap::Parser;
+    use clap::{CommandFactory, Parser, error::ErrorKind};
 
     use super::{Cli, Command};
 
@@ -353,18 +345,15 @@ mod tests {
     }
 
     #[test]
-    fn parses_representative_commands() {
+    fn parses_all_supported_commands() {
         for command in [
-            ["cps", "add", "openai"].as_slice(),
-            ["cps", "disable", "openai"].as_slice(),
             ["cps", "list"].as_slice(),
-            ["cps", "models", "openai"].as_slice(),
-            ["cps", "models", "openrouter"].as_slice(),
+            ["cps", "auth", "deepseek"].as_slice(),
             ["cps", "models"].as_slice(),
+            ["cps", "models", "openrouter"].as_slice(),
+            ["cps", "use", "openrouter/openai/example-model"].as_slice(),
             ["cps", "status"].as_slice(),
             ["cps", "doctor"].as_slice(),
-            ["cps", "auth", "openai"].as_slice(),
-            ["cps", "bridge"].as_slice(),
             ["cps", "restore"].as_slice(),
         ] {
             assert!(
@@ -372,6 +361,48 @@ mod tests {
                 "failed to parse {command:?}"
             );
         }
+    }
+
+    #[test]
+    fn rejects_deferred_commands_as_unknown_subcommands() {
+        for command in ["add", "disable", "bridge"] {
+            let error = Cli::try_parse_from(["cps", command]).unwrap_err();
+            assert_eq!(error.kind(), ErrorKind::InvalidSubcommand, "{command}");
+            assert!(!error.to_string().contains("not implemented"));
+        }
+    }
+
+    #[test]
+    fn help_lists_only_supported_mvp_commands() {
+        let help = Cli::command().render_help().to_string();
+        for command in [
+            "use", "auth", "list", "models", "status", "doctor", "restore",
+        ] {
+            assert!(
+                help.lines()
+                    .any(|line| line.trim_start().starts_with(&format!("{command} "))
+                        || line.trim() == command),
+                "missing {command} in help:\n{help}"
+            );
+        }
+        for command in ["add", "disable", "bridge"] {
+            assert!(
+                !help
+                    .lines()
+                    .any(|line| line.trim_start().starts_with(&format!("{command} "))
+                        || line.trim() == command),
+                "unexpected {command} in help:\n{help}"
+            );
+        }
+    }
+
+    #[test]
+    fn help_and_package_version_are_available() {
+        let help_error = Cli::try_parse_from(["cps", "--help"]).unwrap_err();
+        assert_eq!(help_error.kind(), ErrorKind::DisplayHelp);
+        let version_error = Cli::try_parse_from(["cps", "--version"]).unwrap_err();
+        assert_eq!(version_error.kind(), ErrorKind::DisplayVersion);
+        assert_eq!(version_error.to_string(), "cps 0.1.0\n");
     }
 
     #[test]
