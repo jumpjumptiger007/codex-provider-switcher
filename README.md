@@ -79,9 +79,9 @@ The universal app is produced under
 These commands create only `.app` bundles. Signed/notarized DMG distribution
 has not been performed.
 
-RC1 uses the existing development artwork (`icons/icon.png`) and a macOS
-`icons/icon.icns` generated from it. **FINAL APP ICON SOURCE REQUIRED**:
-original final CPS artwork must be supplied before distribution.
+The Desktop app uses the final CPS application icon. The approved source is
+`apps/desktop/src-tauri/icons/icon.png`; Tauri generates the macOS `icon.icns`
+from that artwork. See `apps/desktop/RC2-REPORT.md` for validation details.
 
 ## Security and recovery
 
