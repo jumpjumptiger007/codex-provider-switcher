@@ -2,5 +2,6 @@
 
 pub mod cli;
 pub mod config;
+pub mod credential;
 pub mod domain;
 pub mod provider;
