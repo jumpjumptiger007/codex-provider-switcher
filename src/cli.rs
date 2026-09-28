@@ -4,8 +4,9 @@ use clap::{Parser, Subcommand};
 
 use crate::{
     application::{self, ApplicationError},
-    domain::{ProviderModelTarget, ProviderTransport},
-    provider::ProviderRegistry,
+    config,
+    domain::{CompatibilityStatus, ProviderModelTarget, ProviderTransport},
+    provider::{ModelDiscoveryStrategy, ProviderRegistry, ProviderSpec},
 };
 
 #[derive(Debug, Parser)]
@@ -33,8 +34,90 @@ pub fn execute(cli: Cli) -> Result<(), CliError> {
     match cli.command {
         Command::Use { target } => use_target(target),
         Command::Auth { provider } => auth_provider(&provider),
+        Command::List => list_providers(),
+        Command::Models { provider } => list_models(provider.as_deref()),
         command => Err(CliError::NotImplemented(command)),
     }
+}
+
+fn list_providers() -> Result<(), CliError> {
+    for row in format_provider_inventory(&ProviderRegistry::initial()) {
+        println!("{row}");
+    }
+    Ok(())
+}
+
+fn list_models(explicit_provider: Option<&str>) -> Result<(), CliError> {
+    let registry = ProviderRegistry::initial();
+    let provider_id = resolve_models_provider(explicit_provider, || {
+        let config_path = application::resolve_user_config_path()?;
+        config::read_active_provider(config_path).map_err(ApplicationError::Config)
+    })
+    .map_err(CliError::Application)?;
+
+    #[cfg(target_os = "macos")]
+    let models = {
+        let store = crate::credential::macos::MacOsKeychainStore::new();
+        application::discover_provider_models(&registry, Some(&store), &provider_id)
+            .map_err(CliError::Application)?
+    };
+    #[cfg(not(target_os = "macos"))]
+    let models = application::discover_provider_models(&registry, None, &provider_id)
+        .map_err(CliError::Application)?;
+
+    for model in models {
+        println!("{}", format_qualified_model_target(&provider_id, &model));
+    }
+    Ok(())
+}
+
+/// Resolve the explicit CLI selection or lazily read the explicit active provider.
+/// The config path is not accessed when a provider argument was supplied.
+pub fn resolve_models_provider(
+    explicit_provider: Option<&str>,
+    read_active_provider: impl FnOnce() -> Result<String, ApplicationError>,
+) -> Result<String, ApplicationError> {
+    match explicit_provider {
+        Some(provider) => Ok(provider.to_owned()),
+        None => read_active_provider(),
+    }
+}
+
+/// Rows for the offline registry inventory, in the registry's stable order.
+pub fn format_provider_inventory(registry: &ProviderRegistry) -> Vec<String> {
+    let mut rows = vec!["ID\tNAME\tTRANSPORT\tCOMPATIBILITY\tDISCOVERY".to_owned()];
+    rows.extend(registry.iter().map(format_provider_row));
+    rows
+}
+
+pub fn format_qualified_model_target(
+    provider_id: &str,
+    model: &crate::model_discovery::DiscoveredModel,
+) -> String {
+    format!("{provider_id}/{}", model.id)
+}
+
+fn format_provider_row(provider: &ProviderSpec) -> String {
+    let transport = match provider.transport {
+        ProviderTransport::Native => "native",
+        ProviderTransport::Responses => "responses",
+        ProviderTransport::Bridge => "bridge",
+    };
+    let compatibility = match provider.compatibility {
+        CompatibilityStatus::Verified => "verified",
+        CompatibilityStatus::VerifiedBasic => "verified-basic",
+        CompatibilityStatus::Degraded => "degraded",
+        CompatibilityStatus::Unverified => "unverified",
+        CompatibilityStatus::Unsupported => "unsupported",
+    };
+    let discovery = match provider.model_discovery {
+        ModelDiscoveryStrategy::CodexManaged => "codex-managed",
+        ModelDiscoveryStrategy::ProviderModelsEndpoint(_) => "provider-models",
+    };
+    format!(
+        "{}\t{}\t{}\t{}\t{}",
+        provider.id, provider.display_name, transport, compatibility, discovery
+    )
 }
 
 fn use_target(target: ProviderModelTarget) -> Result<(), CliError> {
@@ -107,7 +190,7 @@ impl fmt::Display for CliError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::NotImplemented(command) => {
-                write!(formatter, "{:?} is not implemented in Gate 4", command)
+                write!(formatter, "{:?} is not implemented", command)
             }
             Self::Application(error) => error.fmt(formatter),
             Self::Prompt(error) => write!(formatter, "could not read credential securely: {error}"),
@@ -160,6 +243,8 @@ mod tests {
             ["cps", "disable", "openai"].as_slice(),
             ["cps", "list"].as_slice(),
             ["cps", "models", "openai"].as_slice(),
+            ["cps", "models", "openrouter"].as_slice(),
+            ["cps", "models"].as_slice(),
             ["cps", "status"].as_slice(),
             ["cps", "doctor"].as_slice(),
             ["cps", "auth", "openai"].as_slice(),

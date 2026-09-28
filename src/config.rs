@@ -37,6 +37,23 @@ pub struct TransactionResult {
     pub backup_path: PathBuf,
 }
 
+/// Read the explicitly active provider without opening a mutation transaction.
+pub fn read_active_provider(config_path: impl AsRef<Path>) -> Result<String, ConfigError> {
+    let path = config_path.as_ref();
+    let bytes = read_config(path)?;
+    let text = std::str::from_utf8(&bytes).map_err(ConfigError::Utf8)?;
+    let document = text.parse::<DocumentMut>().map_err(ConfigError::Toml)?;
+    let provider = document
+        .get("model_provider")
+        .ok_or(ConfigError::MissingActiveProvider)?
+        .as_str()
+        .ok_or(ConfigError::InvalidActiveProvider)?;
+    if provider.is_empty() {
+        return Err(ConfigError::EmptyActiveProvider);
+    }
+    Ok(provider.to_owned())
+}
+
 pub fn update_active_selection(
     config_path: impl AsRef<Path>,
     selection: &ActiveSelection,
@@ -345,6 +362,9 @@ fn prepare_recovery_backup(
 #[derive(Debug)]
 pub enum ConfigError {
     EmptySelection,
+    MissingActiveProvider,
+    InvalidActiveProvider,
+    EmptyActiveProvider,
     Missing {
         path: PathBuf,
     },
@@ -383,6 +403,15 @@ impl fmt::Display for ConfigError {
         match self {
             Self::EmptySelection => {
                 formatter.write_str("model and model_provider must not be empty")
+            }
+            Self::MissingActiveProvider => {
+                formatter.write_str("Codex config has no active model_provider")
+            }
+            Self::InvalidActiveProvider => {
+                formatter.write_str("active model_provider must be a string")
+            }
+            Self::EmptyActiveProvider => {
+                formatter.write_str("active model_provider must not be empty")
             }
             Self::Missing { path } => write!(
                 formatter,

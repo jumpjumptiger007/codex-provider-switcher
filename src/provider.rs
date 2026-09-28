@@ -151,9 +151,22 @@ impl DirectResponsesSpec {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ModelDiscoverySchema {
+    DeepSeek,
+    Xai,
+    OpenRouter,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ProviderModelsEndpoint {
+    pub path: &'static str,
+    pub schema: ModelDiscoverySchema,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ModelDiscoveryStrategy {
     CodexManaged,
-    ProviderModelsEndpoint { path: &'static str },
+    ProviderModelsEndpoint(ProviderModelsEndpoint),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -311,6 +324,7 @@ fn initial_providers() -> [ProviderSpec; 6] {
             "deepseek",
             "DeepSeek",
             "https://api.deepseek.com",
+            ModelDiscoverySchema::DeepSeek,
             CompatibilityStatus::VerifiedBasic,
             ProviderCapabilities {
                 streaming: CapabilitySupport::Supported,
@@ -324,6 +338,7 @@ fn initial_providers() -> [ProviderSpec; 6] {
             "xai",
             "xAI",
             "https://api.x.ai/v1",
+            ModelDiscoverySchema::Xai,
             CompatibilityStatus::Unverified,
             ProviderCapabilities::model_dependent(),
         ),
@@ -331,6 +346,7 @@ fn initial_providers() -> [ProviderSpec; 6] {
             "openrouter",
             "OpenRouter",
             "https://openrouter.ai/api/v1",
+            ModelDiscoverySchema::OpenRouter,
             CompatibilityStatus::Unverified,
             ProviderCapabilities::model_dependent(),
         ),
@@ -354,6 +370,7 @@ fn direct_responses_provider(
     id: &str,
     display_name: &str,
     base_url: &str,
+    schema: ModelDiscoverySchema,
     compatibility: CompatibilityStatus,
     capabilities: ProviderCapabilities,
 ) -> ProviderSpec {
@@ -368,7 +385,10 @@ fn direct_responses_provider(
         compatibility,
         Some(responses),
         capabilities,
-        ModelDiscoveryStrategy::ProviderModelsEndpoint { path: "/models" },
+        ModelDiscoveryStrategy::ProviderModelsEndpoint(ProviderModelsEndpoint {
+            path: "/models",
+            schema,
+        }),
     )
     .expect("built-in direct Responses provider definition is valid")
 }

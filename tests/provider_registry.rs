@@ -3,9 +3,9 @@ use std::collections::BTreeSet;
 use cps::{
     domain::{CompatibilityStatus, ProviderModelTarget, ProviderTransport},
     provider::{
-        CapabilitySupport, CredentialSlotId, DirectResponsesSpec, ModelDiscoveryStrategy,
-        ProviderCapabilities, ProviderId, ProviderIdError, ProviderRegistry, ProviderSpec,
-        RegistryError, WireProtocol,
+        CapabilitySupport, CredentialSlotId, DirectResponsesSpec, ModelDiscoverySchema,
+        ModelDiscoveryStrategy, ProviderCapabilities, ProviderId, ProviderIdError,
+        ProviderModelsEndpoint, ProviderRegistry, ProviderSpec, RegistryError, WireProtocol,
     },
 };
 
@@ -19,7 +19,10 @@ fn custom_responses_provider(id: &str) -> ProviderSpec {
         CompatibilityStatus::Unverified,
         Some(responses),
         ProviderCapabilities::UNKNOWN,
-        ModelDiscoveryStrategy::ProviderModelsEndpoint { path: "/models" },
+        ModelDiscoveryStrategy::ProviderModelsEndpoint(ProviderModelsEndpoint {
+            path: "/models",
+            schema: ModelDiscoverySchema::DeepSeek,
+        }),
     )
     .unwrap()
 }
@@ -213,7 +216,10 @@ fn seeded_compatibility_capabilities_and_discovery_metadata_are_conservative() {
         CapabilitySupport::Supported
     );
 
-    for id in ["xai", "openrouter"] {
+    for (id, schema) in [
+        ("xai", ModelDiscoverySchema::Xai),
+        ("openrouter", ModelDiscoverySchema::OpenRouter),
+    ] {
         let provider = registry.lookup(id).unwrap();
         assert_eq!(provider.compatibility, CompatibilityStatus::Unverified);
         assert_eq!(
@@ -222,7 +228,10 @@ fn seeded_compatibility_capabilities_and_discovery_metadata_are_conservative() {
         );
         assert_eq!(
             provider.model_discovery,
-            ModelDiscoveryStrategy::ProviderModelsEndpoint { path: "/models" }
+            ModelDiscoveryStrategy::ProviderModelsEndpoint(ProviderModelsEndpoint {
+                path: "/models",
+                schema,
+            })
         );
     }
 }

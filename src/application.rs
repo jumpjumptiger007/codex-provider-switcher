@@ -5,7 +5,8 @@ use crate::{
     config::{self, ActiveSelection, ConfigError, ConfigPathError},
     credential::{CredentialStore, CredentialStoreError, SecretValue, SecretValueError},
     domain::{ProviderModelTarget, ProviderTransport},
-    provider::{ProviderRegistry, RegistryError},
+    model_discovery::{DiscoveredModel, ModelDiscoveryError},
+    provider::{ModelDiscoveryStrategy, ProviderRegistry, RegistryError},
 };
 
 pub fn store_provider_credential(
@@ -63,6 +64,38 @@ pub fn use_provider_model(
     )?)
 }
 
+/// Discover advertised model IDs for one explicitly selected provider.
+pub fn discover_provider_models(
+    registry: &ProviderRegistry,
+    store: Option<&dyn CredentialStore>,
+    provider_id: &str,
+) -> Result<Vec<DiscoveredModel>, ApplicationError> {
+    let provider = registry.lookup(provider_id)?;
+    let endpoint = match provider.model_discovery {
+        ModelDiscoveryStrategy::CodexManaged => {
+            return Err(ApplicationError::CodexManagedModelDiscovery(
+                provider.id.to_string(),
+            ));
+        }
+        ModelDiscoveryStrategy::ProviderModelsEndpoint(endpoint) => endpoint,
+    };
+    let Some(direct) = provider.direct_responses.as_ref() else {
+        return Err(ApplicationError::InvalidDiscoveryProvider(
+            provider.id.to_string(),
+        ));
+    };
+    let store = store.ok_or(ApplicationError::UnsupportedPlatform)?;
+    let credential = store
+        .get(&direct.credential_slot)?
+        .ok_or_else(|| ApplicationError::MissingProviderCredential(provider.id.to_string()))?;
+    Ok(crate::model_discovery::discover_models(
+        provider.id.as_str(),
+        &direct.base_url,
+        endpoint,
+        &credential,
+    )?)
+}
+
 pub fn resolve_user_config_path() -> Result<PathBuf, ApplicationError> {
     resolve_user_config_path_from(
         std::env::var_os("CODEX_HOME").as_deref(),
@@ -94,11 +127,14 @@ pub enum ApplicationError {
     Credential(CredentialStoreError),
     Config(ConfigError),
     ConfigPath(ConfigPathError),
+    ModelDiscovery(ModelDiscoveryError),
     EmptyCredential(SecretValueError),
     CredentialNotApplicable(String),
     ProviderHasNoCredentialSlot(String),
     MissingProviderCredential(String),
     UnsupportedPlatform,
+    CodexManagedModelDiscovery(String),
+    InvalidDiscoveryProvider(String),
 }
 
 impl From<RegistryError> for ApplicationError {
@@ -119,6 +155,12 @@ impl From<ConfigError> for ApplicationError {
     }
 }
 
+impl From<ModelDiscoveryError> for ApplicationError {
+    fn from(error: ModelDiscoveryError) -> Self {
+        Self::ModelDiscovery(error)
+    }
+}
+
 impl fmt::Display for ApplicationError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
@@ -126,6 +168,7 @@ impl fmt::Display for ApplicationError {
             Self::Credential(error) => error.fmt(formatter),
             Self::Config(error) => error.fmt(formatter),
             Self::ConfigPath(error) => error.fmt(formatter),
+            Self::ModelDiscovery(error) => error.fmt(formatter),
             Self::EmptyCredential(_) => formatter.write_str("credential must not be empty"),
             Self::CredentialNotApplicable(provider) => write!(
                 formatter,
@@ -143,6 +186,14 @@ impl fmt::Display for ApplicationError {
             Self::UnsupportedPlatform => {
                 formatter.write_str("CPS Keychain authentication is supported only on macOS")
             }
+            Self::CodexManagedModelDiscovery(provider) => write!(
+                formatter,
+                "CPS does not enumerate models for Codex-managed provider {provider} in Gate 5"
+            ),
+            Self::InvalidDiscoveryProvider(provider) => write!(
+                formatter,
+                "provider {provider} has a model discovery endpoint without a direct provider configuration"
+            ),
         }
     }
 }
