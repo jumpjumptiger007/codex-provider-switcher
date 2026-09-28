@@ -76,12 +76,26 @@ npm run tauri build -- --bundles app --target universal-apple-darwin --no-sign
 
 The universal app is produced under
 `apps/desktop/src-tauri/target/universal-apple-darwin/release/bundle/macos/`.
-These commands create only `.app` bundles. Signed/notarized DMG distribution
-has not been performed.
+These local commands create only `.app` bundles.
 
 The Desktop app uses the final CPS application icon. The approved source is
 `apps/desktop/src-tauri/icons/icon.png`; Tauri generates the macOS `icon.icns`
 from that artwork. See `apps/desktop/RC2-REPORT.md` for validation details.
+
+### macOS DMG release
+
+The v0.1.0 DMG is distributed outside the Mac App Store and is **ad-hoc signed
+and not notarized**. This release does not use paid Apple Developer Program
+distribution credentials, and has no Developer ID signature or Apple
+notarization. macOS may block the first launch. The warning alone does not
+establish that an app is malicious, and ad-hoc signing does not provide Apple
+identity verification. Proceed only if you obtained the DMG from the project's
+official release source and intend to trust it.
+
+To install, drag `Codex Provider Switcher.app` from the DMG into Applications
+and try to open it normally. If macOS blocks it, open **System Settings** →
+**Privacy & Security**, find the blocked-app message, choose **Open Anyway**,
+then confirm **Open** when prompted.
 
 ## Security and recovery
 
