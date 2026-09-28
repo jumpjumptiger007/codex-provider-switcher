@@ -124,3 +124,7 @@ The Rust core and application APIs are separate from CLI parsing and output, so 
 ## Scope
 
 Bridge and LiteLLM support are not part of the current MVP. They may be considered as a future extension, with no commitment implied.
+
+## License
+
+Codex Provider Switcher is licensed under the [MIT License](LICENSE).
