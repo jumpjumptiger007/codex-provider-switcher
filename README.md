@@ -52,6 +52,37 @@ To install the binary into Cargo's user-level bin directory:
 cargo install --path .
 ```
 
+## Desktop macOS app
+
+The single-window Tauri 2 Desktop app uses the same CPS core. With Node.js,
+Rust, and the macOS build tools available, build a local unsigned release app:
+
+```sh
+cd apps/desktop
+npm install
+npm run tauri build -- --bundles app --no-sign
+```
+
+The native build produces
+`apps/desktop/src-tauri/target/release/bundle/macos/Codex Provider Switcher.app`
+(relative to the repository root). The frontend is embedded locally; running
+the app requires neither a development server nor Node.js.
+
+With both `aarch64-apple-darwin` and `x86_64-apple-darwin` Rust targets installed:
+
+```sh
+npm run tauri build -- --bundles app --target universal-apple-darwin --no-sign
+```
+
+The universal app is produced under
+`apps/desktop/src-tauri/target/universal-apple-darwin/release/bundle/macos/`.
+These commands create only `.app` bundles. Signed/notarized DMG distribution
+has not been performed.
+
+RC1 uses the existing development artwork (`icons/icon.png`) and a macOS
+`icons/icon.icns` generated from it. **FINAL APP ICON SOURCE REQUIRED**:
+original final CPS artwork must be supplied before distribution.
+
 ## Security and recovery
 
 CPS-owned direct-provider credentials are stored in macOS Keychain and are not written into Codex configuration. Secret values are redacted from diagnostic formatting. For direct providers, Codex retrieves the credential through a command configured by CPS.

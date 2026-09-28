@@ -2,6 +2,7 @@
   "name": "cps-desktop",
   "private": true,
   "version": "0.1.0",
+  "description": "Switch Codex providers and models securely from a native macOS app.",
   "type": "module",
   "scripts": {
     "dev": "vite",

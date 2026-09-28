@@ -14,7 +14,7 @@
       {
         "title": "Codex Provider Switcher",
         "width": 760,
-        "height": 620,
+        "height": 800,
         "minWidth": 360,
         "minHeight": 420
       }
@@ -24,6 +24,9 @@
     }
   },
   "bundle": {
-    "active": false
+    "active": true,
+    "targets": ["app"],
+    "category": "Utility",
+    "icon": ["icons/icon.icns", "icons/icon.png"]
   }
 }

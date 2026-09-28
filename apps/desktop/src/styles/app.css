@@ -238,7 +238,7 @@ p {
   font-weight: 600;
 }
 
-.text-button:hover {
+.text-button:hover:not(:disabled) {
   border-color: #aab9c7;
   background: #f8fafb;
 }
@@ -409,6 +409,7 @@ p {
   align-items: center;
   justify-content: space-between;
   gap: 12px;
+  flex-wrap: wrap;
 }
 
 .workflow-panel h4 {
@@ -502,12 +503,24 @@ p {
 .primary-button:disabled,
 .text-button:disabled {
   cursor: not-allowed;
-  opacity: 0.55;
+  opacity: 1;
+  border-color: #c3cdd7;
+  color: #566472;
+  background: #e7ecf0;
+}
+
+.field-label input:disabled,
+.field-label select:disabled {
+  opacity: 1;
+  color: #566472;
+  -webkit-text-fill-color: #566472;
+  background: #f3f5f7;
 }
 
 .workflow-error,
 .workflow-success {
   margin: 0;
+  overflow-wrap: anywhere;
   font-size: 11px;
   line-height: 1.5;
 }
@@ -607,6 +620,10 @@ p {
 }
 .diagnostic-findings strong {
   font-weight: 620;
+}
+.diagnostic-findings li > div {
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 .diagnostic-findings p {
   margin: 2px 0 0;
