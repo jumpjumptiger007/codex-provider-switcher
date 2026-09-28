@@ -2,6 +2,7 @@ use std::{
     fmt, fs,
     io::{self, Write},
     path::{Path, PathBuf},
+    time::SystemTime,
 };
 
 use sha2::{Digest, Sha256};
@@ -33,8 +34,60 @@ impl ActiveSelection {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ActiveConfigSelection {
+    pub model: String,
+    pub model_provider: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TransactionResult {
     pub backup_path: PathBuf,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RestoreResult {
+    pub restored_from: PathBuf,
+    pub backup_path: PathBuf,
+}
+
+/// Read the explicitly active model and provider without opening a mutation transaction.
+pub fn read_active_selection(
+    config_path: impl AsRef<Path>,
+) -> Result<ActiveConfigSelection, ConfigError> {
+    let path = config_path.as_ref();
+    let bytes = read_config(path)?;
+    let text = std::str::from_utf8(&bytes).map_err(|source| ConfigError::InvalidConfigUtf8 {
+        path: path.to_owned(),
+        source,
+    })?;
+    let document =
+        text.parse::<DocumentMut>()
+            .map_err(|source| ConfigError::InvalidConfigToml {
+                path: path.to_owned(),
+                source: Box::new(source),
+            })?;
+
+    let model = document
+        .get("model")
+        .ok_or(ConfigError::MissingActiveModel)?
+        .as_str()
+        .ok_or(ConfigError::InvalidActiveModel)?;
+    if model.trim().is_empty() {
+        return Err(ConfigError::EmptyActiveModel);
+    }
+    let model_provider = document
+        .get("model_provider")
+        .ok_or(ConfigError::MissingActiveProvider)?
+        .as_str()
+        .ok_or(ConfigError::InvalidActiveProvider)?;
+    if model_provider.trim().is_empty() {
+        return Err(ConfigError::EmptyActiveProvider);
+    }
+
+    Ok(ActiveConfigSelection {
+        model: model.to_owned(),
+        model_provider: model_provider.to_owned(),
+    })
 }
 
 /// Read the explicitly active provider without opening a mutation transaction.
@@ -83,6 +136,16 @@ pub fn update_provider_and_selection(
         },
         || {},
     )
+}
+
+/// Restore the newest valid CPS recovery backup for this config file.
+pub fn restore_config(config_path: impl AsRef<Path>) -> Result<RestoreResult, ConfigError> {
+    restore_document(config_path.as_ref(), || {})
+}
+
+/// Find the unique newest regular CPS recovery backup next to the config file.
+pub fn latest_recovery_backup(config_path: impl AsRef<Path>) -> Result<PathBuf, ConfigError> {
+    select_latest_recovery_backup(config_path.as_ref())
 }
 
 fn set_active_selection(document: &mut DocumentMut, selection: &ActiveSelection) {
@@ -162,6 +225,174 @@ fn update_document(
     Ok(TransactionResult { backup_path })
 }
 
+fn restore_document(
+    config_path: &Path,
+    before_conflict_check: impl FnOnce(),
+) -> Result<RestoreResult, ConfigError> {
+    let original_bytes = read_config(config_path)?;
+    let original_digest = digest(&original_bytes);
+    let backup_path = select_latest_recovery_backup(config_path)?;
+    let replacement_bytes = fs::read(&backup_path).map_err(|source| ConfigError::BackupRead {
+        path: backup_path.clone(),
+        source,
+    })?;
+    validate_recovery_contents(&backup_path, &replacement_bytes)?;
+
+    let parent = config_path
+        .parent()
+        .ok_or_else(|| ConfigError::MissingParent {
+            path: config_path.to_owned(),
+        })?;
+    let metadata = fs::metadata(config_path).map_err(|source| ConfigError::Read {
+        path: config_path.to_owned(),
+        source,
+    })?;
+    let mut temp_file = NamedTempFile::new_in(parent).map_err(ConfigError::RestoreTempFile)?;
+    temp_file
+        .as_file_mut()
+        .write_all(&replacement_bytes)
+        .map_err(ConfigError::RestoreWrite)?;
+    temp_file
+        .as_file_mut()
+        .sync_all()
+        .map_err(ConfigError::RestoreWrite)?;
+    fs::set_permissions(temp_file.path(), metadata.permissions())
+        .map_err(ConfigError::RestoreWrite)?;
+
+    let recovery_backup = prepare_recovery_backup(config_path, &original_bytes)?;
+    before_conflict_check();
+    let current_bytes = match read_config(config_path) {
+        Ok(bytes) => bytes,
+        Err(ConfigError::Missing { .. }) => {
+            return Err(ConfigError::Conflict {
+                path: config_path.to_owned(),
+            });
+        }
+        Err(error) => return Err(error),
+    };
+    if digest(&current_bytes) != original_digest {
+        return Err(ConfigError::Conflict {
+            path: config_path.to_owned(),
+        });
+    }
+
+    temp_file
+        .persist(config_path)
+        .map_err(|error| ConfigError::RestorePersist {
+            path: config_path.to_owned(),
+            source: error.error,
+        })?;
+    let (_, new_backup_path) = recovery_backup
+        .keep()
+        .map_err(|error| ConfigError::Backup {
+            directory: parent.to_owned(),
+            source: error.error,
+        })?;
+
+    let restored_bytes = fs::read(config_path).map_err(|source| ConfigError::Read {
+        path: config_path.to_owned(),
+        source,
+    })?;
+    validate_config_contents(config_path, &restored_bytes)?;
+
+    Ok(RestoreResult {
+        restored_from: backup_path,
+        backup_path: new_backup_path,
+    })
+}
+
+fn select_latest_recovery_backup(config_path: &Path) -> Result<PathBuf, ConfigError> {
+    let parent = config_path
+        .parent()
+        .ok_or_else(|| ConfigError::MissingParent {
+            path: config_path.to_owned(),
+        })?;
+    let file_name = config_path
+        .file_name()
+        .ok_or_else(|| ConfigError::MissingFileName {
+            path: config_path.to_owned(),
+        })?;
+    let prefix = format!("{}.cps-backup-", file_name.to_string_lossy());
+    let entries = fs::read_dir(parent).map_err(|source| ConfigError::BackupDirectoryRead {
+        directory: parent.to_owned(),
+        source,
+    })?;
+
+    let mut newest: Option<(SystemTime, PathBuf)> = None;
+    let mut newest_count = 0usize;
+    for entry in entries {
+        let entry = entry.map_err(|source| ConfigError::BackupDirectoryRead {
+            directory: parent.to_owned(),
+            source,
+        })?;
+        if !entry.file_name().to_string_lossy().starts_with(&prefix) {
+            continue;
+        }
+        let candidate_path = entry.path();
+        let metadata = fs::symlink_metadata(&candidate_path).map_err(|source| {
+            ConfigError::BackupMetadata {
+                path: candidate_path.clone(),
+                source,
+            }
+        })?;
+        if !metadata.file_type().is_file() {
+            continue;
+        }
+        let modified = metadata
+            .modified()
+            .map_err(|source| ConfigError::BackupMetadata {
+                path: candidate_path.clone(),
+                source,
+            })?;
+        match newest.as_ref().map(|(time, _)| modified.cmp(time)) {
+            None | Some(std::cmp::Ordering::Greater) => {
+                newest = Some((modified, candidate_path));
+                newest_count = 1;
+            }
+            Some(std::cmp::Ordering::Equal) => newest_count += 1,
+            Some(std::cmp::Ordering::Less) => {}
+        }
+    }
+
+    let Some((_, path)) = newest else {
+        return Err(ConfigError::NoRecoveryBackup {
+            directory: parent.to_owned(),
+        });
+    };
+    if newest_count > 1 {
+        return Err(ConfigError::AmbiguousLatestBackup {
+            directory: parent.to_owned(),
+        });
+    }
+    Ok(path)
+}
+
+fn validate_recovery_contents(path: &Path, bytes: &[u8]) -> Result<(), ConfigError> {
+    let text = std::str::from_utf8(bytes).map_err(|source| ConfigError::BackupUtf8 {
+        path: path.to_owned(),
+        source,
+    })?;
+    text.parse::<DocumentMut>()
+        .map_err(|source| ConfigError::BackupToml {
+            path: path.to_owned(),
+            source: Box::new(source),
+        })?;
+    Ok(())
+}
+
+fn validate_config_contents(path: &Path, bytes: &[u8]) -> Result<(), ConfigError> {
+    let text = std::str::from_utf8(bytes).map_err(|source| ConfigError::InvalidConfigUtf8 {
+        path: path.to_owned(),
+        source,
+    })?;
+    text.parse::<DocumentMut>()
+        .map_err(|source| ConfigError::InvalidConfigToml {
+            path: path.to_owned(),
+            source: Box::new(source),
+        })?;
+    Ok(())
+}
+
 fn read_config(path: &Path) -> Result<Vec<u8>, ConfigError> {
     fs::read(path).map_err(|source| {
         if source.kind() == io::ErrorKind::NotFound {
@@ -182,7 +413,8 @@ pub mod test_support {
     use std::path::Path;
 
     use super::{
-        ActiveSelection, ConfigError, TransactionResult, set_active_selection, update_document,
+        ActiveSelection, ConfigError, RestoreResult, TransactionResult, restore_document,
+        set_active_selection, update_document,
     };
 
     pub fn transaction_with_before_commit(
@@ -198,6 +430,13 @@ pub mod test_support {
             },
             before_conflict_check,
         )
+    }
+
+    pub fn restore_with_before_commit(
+        config_path: &Path,
+        before_conflict_check: impl FnOnce(),
+    ) -> Result<RestoreResult, ConfigError> {
+        restore_document(config_path, before_conflict_check)
     }
 }
 
@@ -362,6 +601,9 @@ fn prepare_recovery_backup(
 #[derive(Debug)]
 pub enum ConfigError {
     EmptySelection,
+    MissingActiveModel,
+    InvalidActiveModel,
+    EmptyActiveModel,
     MissingActiveProvider,
     InvalidActiveProvider,
     EmptyActiveProvider,
@@ -381,6 +623,14 @@ pub enum ConfigError {
         path: PathBuf,
         source: io::Error,
     },
+    InvalidConfigUtf8 {
+        path: PathBuf,
+        source: std::str::Utf8Error,
+    },
+    InvalidConfigToml {
+        path: PathBuf,
+        source: Box<TomlError>,
+    },
     Utf8(std::str::Utf8Error),
     Toml(TomlError),
     TempFile(io::Error),
@@ -396,6 +646,38 @@ pub enum ConfigError {
         path: PathBuf,
         source: io::Error,
     },
+    BackupDirectoryRead {
+        directory: PathBuf,
+        source: io::Error,
+    },
+    BackupMetadata {
+        path: PathBuf,
+        source: io::Error,
+    },
+    NoRecoveryBackup {
+        directory: PathBuf,
+    },
+    AmbiguousLatestBackup {
+        directory: PathBuf,
+    },
+    BackupRead {
+        path: PathBuf,
+        source: io::Error,
+    },
+    BackupUtf8 {
+        path: PathBuf,
+        source: std::str::Utf8Error,
+    },
+    BackupToml {
+        path: PathBuf,
+        source: Box<TomlError>,
+    },
+    RestoreTempFile(io::Error),
+    RestoreWrite(io::Error),
+    RestorePersist {
+        path: PathBuf,
+        source: io::Error,
+    },
 }
 
 impl fmt::Display for ConfigError {
@@ -404,6 +686,9 @@ impl fmt::Display for ConfigError {
             Self::EmptySelection => {
                 formatter.write_str("model and model_provider must not be empty")
             }
+            Self::MissingActiveModel => formatter.write_str("Codex config has no active model"),
+            Self::InvalidActiveModel => formatter.write_str("active model must be a string"),
+            Self::EmptyActiveModel => formatter.write_str("active model must not be empty"),
             Self::MissingActiveProvider => {
                 formatter.write_str("Codex config has no active model_provider")
             }
@@ -433,6 +718,16 @@ impl fmt::Display for ConfigError {
             Self::Read { path, source } => {
                 write!(formatter, "could not read {}: {source}", path.display())
             }
+            Self::InvalidConfigUtf8 { path, .. } => {
+                write!(formatter, "Codex config is not UTF-8: {}", path.display())
+            }
+            Self::InvalidConfigToml { path, .. } => {
+                write!(
+                    formatter,
+                    "Codex config is invalid TOML: {}",
+                    path.display()
+                )
+            }
             Self::Utf8(source) => write!(formatter, "config is not UTF-8: {source}"),
             Self::Toml(source) => write!(formatter, "config is invalid TOML: {source}"),
             Self::TempFile(source) => write!(
@@ -454,6 +749,54 @@ impl fmt::Display for ConfigError {
             ),
             Self::Persist { path, source } => {
                 write!(formatter, "could not replace {}: {source}", path.display())
+            }
+            Self::BackupDirectoryRead { directory, source } => write!(
+                formatter,
+                "could not inspect recovery backups in {}: {source}",
+                directory.display()
+            ),
+            Self::BackupMetadata { path, source } => write!(
+                formatter,
+                "could not inspect recovery backup {}: {source}",
+                path.display()
+            ),
+            Self::NoRecoveryBackup { directory } => write!(
+                formatter,
+                "no CPS recovery backup exists in {}",
+                directory.display()
+            ),
+            Self::AmbiguousLatestBackup { directory } => write!(
+                formatter,
+                "multiple CPS recovery backups have the newest timestamp in {}",
+                directory.display()
+            ),
+            Self::BackupRead { path, source } => write!(
+                formatter,
+                "could not read recovery backup {}: {source}",
+                path.display()
+            ),
+            Self::BackupUtf8 { path, .. } => {
+                write!(
+                    formatter,
+                    "recovery backup is not UTF-8: {}",
+                    path.display()
+                )
+            }
+            Self::BackupToml { path, .. } => {
+                write!(
+                    formatter,
+                    "recovery backup is invalid TOML: {}",
+                    path.display()
+                )
+            }
+            Self::RestoreTempFile(source) => {
+                write!(formatter, "could not create restore tempfile: {source}")
+            }
+            Self::RestoreWrite(source) => {
+                write!(formatter, "could not prepare restore transaction: {source}")
+            }
+            Self::RestorePersist { path, source } => {
+                write!(formatter, "could not restore {}: {source}", path.display())
             }
         }
     }

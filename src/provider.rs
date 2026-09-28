@@ -292,6 +292,12 @@ impl ProviderRegistry {
             .ok_or(RegistryError::UnknownProvider(id))
     }
 
+    /// Optionally find a registry entry without turning an unrecognized configured ID into an error.
+    pub fn get(&self, id: &str) -> Option<&ProviderSpec> {
+        let id = ProviderId::new(id).ok()?;
+        self.providers.get(&id)
+    }
+
     pub fn resolve(
         &self,
         target: &ProviderModelTarget,

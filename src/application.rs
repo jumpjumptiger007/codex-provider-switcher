@@ -2,7 +2,9 @@ use std::{error::Error, ffi::OsStr, fmt, path::PathBuf};
 
 use crate::{
     auth_command::project_keychain_auth_command,
-    config::{self, ActiveSelection, ConfigError, ConfigPathError},
+    config::{
+        self, ActiveConfigSelection, ActiveSelection, ConfigError, ConfigPathError, RestoreResult,
+    },
     credential::{CredentialStore, CredentialStoreError, SecretValue, SecretValueError},
     domain::{ProviderModelTarget, ProviderTransport},
     model_discovery::{DiscoveredModel, ModelDiscoveryError},
@@ -62,6 +64,34 @@ pub fn use_provider_model(
         &definition,
         &auth_command,
     )?)
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Status {
+    pub selection: ActiveConfigSelection,
+    pub known_provider: Option<ProviderTransport>,
+}
+
+/// Inspect explicit active config values and classify a provider only when it is in the registry.
+pub fn status(
+    registry: &ProviderRegistry,
+    config_path: impl AsRef<std::path::Path>,
+) -> Result<Status, ApplicationError> {
+    let selection = config::read_active_selection(config_path)?;
+    let known_provider = registry
+        .get(&selection.model_provider)
+        .map(|provider| provider.transport);
+    Ok(Status {
+        selection,
+        known_provider,
+    })
+}
+
+/// Restore the newest validated CPS recovery backup for the active Codex config file.
+pub fn restore(
+    config_path: impl AsRef<std::path::Path>,
+) -> Result<RestoreResult, ApplicationError> {
+    Ok(config::restore_config(config_path)?)
 }
 
 /// Discover advertised model IDs for one explicitly selected provider.

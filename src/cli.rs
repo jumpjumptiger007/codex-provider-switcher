@@ -36,8 +36,62 @@ pub fn execute(cli: Cli) -> Result<(), CliError> {
         Command::Auth { provider } => auth_provider(&provider),
         Command::List => list_providers(),
         Command::Models { provider } => list_models(provider.as_deref()),
+        Command::Status => show_status(),
+        Command::Restore => restore_config(),
         command => Err(CliError::NotImplemented(command)),
     }
+}
+
+fn show_status() -> Result<(), CliError> {
+    let registry = ProviderRegistry::initial();
+    let config_path = application::resolve_user_config_path().map_err(CliError::Application)?;
+    let status = application::status(&registry, config_path).map_err(CliError::Application)?;
+    println!("{}", format_status(&status));
+    Ok(())
+}
+
+fn restore_config() -> Result<(), CliError> {
+    let config_path = application::resolve_user_config_path().map_err(CliError::Application)?;
+    let result = application::restore(config_path).map_err(CliError::Application)?;
+    println!("{}", format_restore_success(&result));
+    Ok(())
+}
+
+/// Render stable local status without exposing config paths or diagnostic internals.
+pub fn format_status(status: &application::Status) -> String {
+    let selection = &status.selection;
+    let mut output = format!(
+        "provider: {}\nmodel: {}\ntarget: {}/{}",
+        selection.model_provider, selection.model, selection.model_provider, selection.model
+    );
+    match status.known_provider {
+        Some(ProviderTransport::Native) => {
+            output.push_str("\nknown_provider: yes\ntransport: native");
+        }
+        Some(ProviderTransport::Responses) => {
+            output.push_str("\nknown_provider: yes\ntransport: responses");
+        }
+        Some(ProviderTransport::Bridge) => {
+            output.push_str("\nknown_provider: yes\ntransport: bridge");
+        }
+        None => output.push_str("\nknown_provider: no"),
+    }
+    output
+}
+
+/// Render a compact restore confirmation using only filenames.
+pub fn format_restore_success(result: &config::RestoreResult) -> String {
+    format!(
+        "Restored config from {}.\nRecovery backup: {}",
+        display_basename(&result.restored_from),
+        display_basename(&result.backup_path)
+    )
+}
+
+fn display_basename(path: &std::path::Path) -> String {
+    path.file_name()
+        .map(|name| name.to_string_lossy().into_owned())
+        .unwrap_or_else(|| "unknown".to_owned())
 }
 
 fn list_providers() -> Result<(), CliError> {
