@@ -183,10 +183,22 @@
           "markdownDescription": "Enables the get_providers command without any pre-configured scope."
         },
         {
+          "description": "Enables the get_status command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-get-status",
+          "markdownDescription": "Enables the get_status command without any pre-configured scope."
+        },
+        {
           "description": "Denies the get_providers command without any pre-configured scope.",
           "type": "string",
           "const": "deny-get-providers",
           "markdownDescription": "Denies the get_providers command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the get_status command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-get-status",
+          "markdownDescription": "Denies the get_status command without any pre-configured scope."
         },
         {
           "description": "Default core plugins set.\n#### This default permission set includes:\n\n- `core:path:default`\n- `core:event:default`\n- `core:window:default`\n- `core:webview:default`\n- `core:app:default`\n- `core:image:default`\n- `core:resources:default`\n- `core:menu:default`\n- `core:tray:default`",

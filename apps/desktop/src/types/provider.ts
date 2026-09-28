@@ -17,3 +17,11 @@ export interface Provider {
   discovery: ProviderDiscovery;
   requiresCredential: boolean;
 }
+
+export interface Status {
+  provider: string;
+  model: string;
+  target: string;
+  knownProvider: boolean;
+  transport: ProviderTransport | null;
+}

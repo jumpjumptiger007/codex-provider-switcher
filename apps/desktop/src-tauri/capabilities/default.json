@@ -1,7 +1,7 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "Allow the bundled desktop frontend to read the provider inventory.",
+  "description": "Allow the main window to read provider inventory and current setup.",
   "windows": ["main"],
-  "permissions": ["allow-get-providers"]
+  "permissions": ["allow-get-providers", "allow-get-status"]
 }
