@@ -1,0 +1,1 @@
+{"default":{"identifier":"default","description":"Allow the bundled desktop frontend to read the provider inventory.","local":true,"windows":["main"],"permissions":["allow-get-providers"]}}
