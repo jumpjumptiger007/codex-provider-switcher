@@ -89,8 +89,9 @@ and not notarized**. This release does not use paid Apple Developer Program
 distribution credentials, and has no Developer ID signature or Apple
 notarization. macOS may block the first launch. The warning alone does not
 establish that an app is malicious, and ad-hoc signing does not provide Apple
-identity verification. Proceed only if you obtained the DMG from the project's
-official release source and intend to trust it.
+identity verification. Official macOS release downloads are published on
+[GitHub Releases](https://github.com/jumpjumptiger007/codex-provider-switcher/releases).
+Proceed only if you obtained the DMG from that release page and intend to trust it.
 
 To install, drag `Codex Provider Switcher.app` from the DMG into Applications
 and try to open it normally. If macOS blocks it, open **System Settings** →
