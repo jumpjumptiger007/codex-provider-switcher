@@ -37,8 +37,27 @@ pub fn execute(cli: Cli) -> Result<(), CliError> {
         Command::List => list_providers(),
         Command::Models { provider } => list_models(provider.as_deref()),
         Command::Status => show_status(),
+        Command::Doctor => run_doctor(),
         Command::Restore => restore_config(),
         command => Err(CliError::NotImplemented(command)),
+    }
+}
+
+fn run_doctor() -> Result<(), CliError> {
+    let registry = ProviderRegistry::initial();
+    let config_path = application::resolve_user_config_path().map_err(CliError::Application)?;
+    #[cfg(target_os = "macos")]
+    let report = {
+        let store = crate::credential::macos::MacOsKeychainStore::new();
+        application::doctor(&registry, Some(&store), config_path)
+    };
+    #[cfg(not(target_os = "macos"))]
+    let report = application::doctor(&registry, None, config_path);
+    println!("{}", format_doctor_report(&report));
+    if report.has_errors() {
+        Err(CliError::DoctorFoundErrors)
+    } else {
+        Ok(())
     }
 }
 
@@ -86,6 +105,45 @@ pub fn format_restore_success(result: &config::RestoreResult) -> String {
         display_basename(&result.restored_from),
         display_basename(&result.backup_path)
     )
+}
+
+/// Render an ordered, stable, secret-free local diagnostics report.
+pub fn format_doctor_report(report: &application::DoctorReport) -> String {
+    let mut lines = report
+        .findings
+        .iter()
+        .map(|finding| {
+            format!(
+                "[{}] {}: {}",
+                severity_label(finding.severity),
+                finding.check,
+                finding.message
+            )
+        })
+        .collect::<Vec<_>>();
+    lines.push(format!(
+        "result: {}",
+        if report.has_errors() {
+            "errors"
+        } else if report.findings.iter().any(|finding| matches!(
+            finding.severity,
+            application::DiagnosticSeverity::Warning | application::DiagnosticSeverity::Info
+        )) {
+            "warnings"
+        } else {
+            "healthy"
+        }
+    ));
+    lines.join("\n")
+}
+
+fn severity_label(severity: application::DiagnosticSeverity) -> &'static str {
+    match severity {
+        application::DiagnosticSeverity::Ok => "ok",
+        application::DiagnosticSeverity::Info => "info",
+        application::DiagnosticSeverity::Warning => "warning",
+        application::DiagnosticSeverity::Error => "error",
+    }
 }
 
 fn display_basename(path: &std::path::Path) -> String {
@@ -232,6 +290,7 @@ pub enum CliError {
     NotImplemented(Command),
     Application(ApplicationError),
     Prompt(std::io::Error),
+    DoctorFoundErrors,
 }
 
 impl CliError {
@@ -248,6 +307,9 @@ impl fmt::Display for CliError {
             }
             Self::Application(error) => error.fmt(formatter),
             Self::Prompt(error) => write!(formatter, "could not read credential securely: {error}"),
+            Self::DoctorFoundErrors => {
+                formatter.write_str("doctor found local configuration errors")
+            }
         }
     }
 }

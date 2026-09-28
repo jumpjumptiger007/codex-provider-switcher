@@ -50,6 +50,33 @@ pub struct RestoreResult {
     pub backup_path: PathBuf,
 }
 
+/// Read-only result of comparing an active custom provider definition to CPS's projection.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ProviderDefinitionInspection {
+    Missing,
+    Matches,
+    Conflicts,
+    Malformed,
+}
+
+/// Read-only result of inspecting CPS recovery backups for a config file.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum RecoveryInspection {
+    None,
+    Ready { backup_path: PathBuf },
+    Ambiguous,
+    InvalidUtf8,
+    InvalidToml,
+    Unavailable,
+}
+
+/// Validate that a Codex config is readable UTF-8 TOML without changing it.
+pub fn validate_config(config_path: impl AsRef<Path>) -> Result<(), ConfigError> {
+    let path = config_path.as_ref();
+    let bytes = read_config(path)?;
+    validate_config_contents(path, &bytes)
+}
+
 /// Read the explicitly active model and provider without opening a mutation transaction.
 pub fn read_active_selection(
     config_path: impl AsRef<Path>,
@@ -146,6 +173,64 @@ pub fn restore_config(config_path: impl AsRef<Path>) -> Result<RestoreResult, Co
 /// Find the unique newest regular CPS recovery backup next to the config file.
 pub fn latest_recovery_backup(config_path: impl AsRef<Path>) -> Result<PathBuf, ConfigError> {
     select_latest_recovery_backup(config_path.as_ref())
+}
+
+/// Compare the active custom provider definition using the same collision semantics as writes.
+pub fn inspect_provider_definition(
+    config_path: impl AsRef<Path>,
+    definition: &CodexCustomProviderDefinition,
+    auth_command: &AuthCommand,
+) -> Result<ProviderDefinitionInspection, ConfigError> {
+    let path = config_path.as_ref();
+    let bytes = read_config(path)?;
+    let text = std::str::from_utf8(&bytes).map_err(|source| ConfigError::InvalidConfigUtf8 {
+        path: path.to_owned(),
+        source,
+    })?;
+    let document =
+        text.parse::<DocumentMut>()
+            .map_err(|source| ConfigError::InvalidConfigToml {
+                path: path.to_owned(),
+                source: Box::new(source),
+            })?;
+
+    let Some(providers) = document.get("model_providers") else {
+        return Ok(ProviderDefinitionInspection::Missing);
+    };
+    let Some(providers) = providers.as_table() else {
+        return Ok(ProviderDefinitionInspection::Malformed);
+    };
+    let Some(existing) = providers.get(definition.provider_id.as_str()) else {
+        return Ok(ProviderDefinitionInspection::Missing);
+    };
+    Ok(
+        if provider_definition_matches(existing, definition, auth_command) {
+            ProviderDefinitionInspection::Matches
+        } else {
+            ProviderDefinitionInspection::Conflicts
+        },
+    )
+}
+
+/// Inspect recovery readiness without creating, selecting, or changing any backup.
+pub fn inspect_recovery(config_path: impl AsRef<Path>) -> RecoveryInspection {
+    let config_path = config_path.as_ref();
+    let backup_path = match select_latest_recovery_backup(config_path) {
+        Ok(path) => path,
+        Err(ConfigError::NoRecoveryBackup { .. }) => return RecoveryInspection::None,
+        Err(ConfigError::AmbiguousLatestBackup { .. }) => return RecoveryInspection::Ambiguous,
+        Err(_) => return RecoveryInspection::Unavailable,
+    };
+    let bytes = match fs::read(&backup_path) {
+        Ok(bytes) => bytes,
+        Err(_) => return RecoveryInspection::Unavailable,
+    };
+    match validate_recovery_contents(&backup_path, &bytes) {
+        Ok(()) => RecoveryInspection::Ready { backup_path },
+        Err(ConfigError::BackupUtf8 { .. }) => RecoveryInspection::InvalidUtf8,
+        Err(ConfigError::BackupToml { .. }) => RecoveryInspection::InvalidToml,
+        Err(_) => RecoveryInspection::Unavailable,
+    }
 }
 
 fn set_active_selection(document: &mut DocumentMut, selection: &ActiveSelection) {

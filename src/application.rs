@@ -3,7 +3,8 @@ use std::{error::Error, ffi::OsStr, fmt, path::PathBuf};
 use crate::{
     auth_command::project_keychain_auth_command,
     config::{
-        self, ActiveConfigSelection, ActiveSelection, ConfigError, ConfigPathError, RestoreResult,
+        self, ActiveConfigSelection, ActiveSelection, ConfigError, ConfigPathError,
+        ProviderDefinitionInspection, RecoveryInspection, RestoreResult,
     },
     credential::{CredentialStore, CredentialStoreError, SecretValue, SecretValueError},
     domain::{ProviderModelTarget, ProviderTransport},
@@ -70,6 +71,240 @@ pub fn use_provider_model(
 pub struct Status {
     pub selection: ActiveConfigSelection,
     pub known_provider: Option<ProviderTransport>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DiagnosticSeverity {
+    Ok,
+    Info,
+    Warning,
+    Error,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DiagnosticFinding {
+    pub check: &'static str,
+    pub severity: DiagnosticSeverity,
+    pub message: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct DoctorReport {
+    pub findings: Vec<DiagnosticFinding>,
+}
+
+impl DoctorReport {
+    pub fn has_errors(&self) -> bool {
+        self.findings
+            .iter()
+            .any(|finding| finding.severity == DiagnosticSeverity::Error)
+    }
+
+    fn push(
+        &mut self,
+        check: &'static str,
+        severity: DiagnosticSeverity,
+        message: impl Into<String>,
+    ) {
+        self.findings.push(DiagnosticFinding {
+            check,
+            severity,
+            message: message.into(),
+        });
+    }
+}
+
+/// Diagnose local CPS readiness without changing config, backups, or credentials.
+pub fn doctor(
+    registry: &ProviderRegistry,
+    store: Option<&dyn CredentialStore>,
+    config_path: impl AsRef<std::path::Path>,
+) -> DoctorReport {
+    let config_path = config_path.as_ref();
+    let mut report = DoctorReport::default();
+    if let Err(error) = config::validate_config(config_path) {
+        report.push(
+            "config",
+            DiagnosticSeverity::Error,
+            config_error_summary(&error),
+        );
+        add_recovery_finding(&mut report, config_path);
+        return report;
+    }
+    report.push("config", DiagnosticSeverity::Ok, "valid");
+
+    let selection = match config::read_active_selection(config_path) {
+        Ok(selection) => selection,
+        Err(error) => {
+            report.push(
+                "selection",
+                DiagnosticSeverity::Error,
+                selection_error_summary(&error),
+            );
+            add_recovery_finding(&mut report, config_path);
+            return report;
+        }
+    };
+    report.push(
+        "selection",
+        DiagnosticSeverity::Ok,
+        format!("{}/{}", selection.model_provider, selection.model),
+    );
+
+    let Some(provider) = registry.get(&selection.model_provider) else {
+        report.push(
+            "provider",
+            DiagnosticSeverity::Warning,
+            "not managed by CPS",
+        );
+        add_recovery_finding(&mut report, config_path);
+        return report;
+    };
+    report.push(
+        "provider",
+        DiagnosticSeverity::Ok,
+        format!("{} ({})", provider.id, transport_name(provider.transport)),
+    );
+
+    if provider.transport == ProviderTransport::Responses {
+        let definition = match provider.project_custom_codex_provider() {
+            Ok(Some(definition)) => definition,
+            _ => {
+                report.push(
+                    "provider_definition",
+                    DiagnosticSeverity::Error,
+                    "could not project CPS definition",
+                );
+                add_recovery_finding(&mut report, config_path);
+                return report;
+            }
+        };
+        let auth_command = project_keychain_auth_command(
+            &provider
+                .direct_responses
+                .as_ref()
+                .expect("Responses providers have direct settings")
+                .credential_slot,
+        );
+        match config::inspect_provider_definition(config_path, &definition, &auth_command) {
+            Ok(ProviderDefinitionInspection::Matches) => {
+                report.push("provider_definition", DiagnosticSeverity::Ok, "matches CPS")
+            }
+            Ok(ProviderDefinitionInspection::Missing) => {
+                report.push("provider_definition", DiagnosticSeverity::Error, "missing")
+            }
+            Ok(ProviderDefinitionInspection::Conflicts) => report.push(
+                "provider_definition",
+                DiagnosticSeverity::Error,
+                "conflicts with CPS",
+            ),
+            Ok(ProviderDefinitionInspection::Malformed) => report.push(
+                "provider_definition",
+                DiagnosticSeverity::Error,
+                "model_providers is malformed",
+            ),
+            Err(_) => report.push(
+                "provider_definition",
+                DiagnosticSeverity::Error,
+                "could not inspect",
+            ),
+        }
+
+        match store {
+            Some(store) => match store.get(
+                &provider
+                    .direct_responses
+                    .as_ref()
+                    .expect("Responses providers have direct settings")
+                    .credential_slot,
+            ) {
+                Ok(Some(_)) => report.push("credential", DiagnosticSeverity::Ok, "present"),
+                Ok(None) => report.push("credential", DiagnosticSeverity::Error, "missing"),
+                Err(_) => report.push(
+                    "credential",
+                    DiagnosticSeverity::Error,
+                    "could not retrieve stored credential",
+                ),
+            },
+            None => report.push(
+                "credential",
+                DiagnosticSeverity::Error,
+                "credential store unavailable",
+            ),
+        }
+    }
+    add_recovery_finding(&mut report, config_path);
+    report
+}
+
+fn transport_name(transport: ProviderTransport) -> &'static str {
+    match transport {
+        ProviderTransport::Native => "native",
+        ProviderTransport::Responses => "responses",
+        ProviderTransport::Bridge => "bridge",
+    }
+}
+
+fn config_error_summary(error: &ConfigError) -> &'static str {
+    match error {
+        ConfigError::Missing { .. } => "missing",
+        ConfigError::InvalidConfigUtf8 { .. } => "invalid UTF-8",
+        ConfigError::InvalidConfigToml { .. } => "invalid TOML",
+        _ => "unreadable",
+    }
+}
+
+fn selection_error_summary(error: &ConfigError) -> &'static str {
+    match error {
+        ConfigError::MissingActiveModel => "model is missing",
+        ConfigError::InvalidActiveModel => "model must be a string",
+        ConfigError::EmptyActiveModel => "model is blank",
+        ConfigError::MissingActiveProvider => "model_provider is missing",
+        ConfigError::InvalidActiveProvider => "model_provider must be a string",
+        ConfigError::EmptyActiveProvider => "model_provider is blank",
+        _ => "could not inspect active selection",
+    }
+}
+
+fn add_recovery_finding(report: &mut DoctorReport, config_path: &std::path::Path) {
+    match config::inspect_recovery(config_path) {
+        RecoveryInspection::None => report.push(
+            "recovery",
+            DiagnosticSeverity::Info,
+            "no CPS recovery backup",
+        ),
+        RecoveryInspection::Ready { backup_path } => report.push(
+            "recovery",
+            DiagnosticSeverity::Ok,
+            format!(
+                "latest backup is valid ({})",
+                backup_path
+                    .file_name()
+                    .unwrap_or_default()
+                    .to_string_lossy()
+            ),
+        ),
+        RecoveryInspection::Ambiguous => report.push(
+            "recovery",
+            DiagnosticSeverity::Warning,
+            "newest backup is ambiguous",
+        ),
+        RecoveryInspection::InvalidUtf8 => report.push(
+            "recovery",
+            DiagnosticSeverity::Warning,
+            "latest backup is invalid UTF-8",
+        ),
+        RecoveryInspection::InvalidToml => report.push(
+            "recovery",
+            DiagnosticSeverity::Warning,
+            "latest backup is invalid TOML",
+        ),
+        RecoveryInspection::Unavailable => report.push(
+            "recovery",
+            DiagnosticSeverity::Warning,
+            "could not inspect CPS recovery backups",
+        ),
+    }
 }
 
 /// Inspect explicit active config values and classify a provider only when it is in the registry.
