@@ -1,1 +1,1 @@
-{"default":{"identifier":"default","description":"Allow the main window to read provider inventory and current setup.","local":true,"windows":["main"],"permissions":["allow-get-providers","allow-get-status"]}}
+{"default":{"identifier":"default","description":"Allow the main window to use CPS provider, credential, model, and switching commands.","local":true,"windows":["main"],"permissions":["allow-get-providers","allow-get-status","allow-get-credential-status","allow-save-credential","allow-get-models","allow-switch-model"]}}

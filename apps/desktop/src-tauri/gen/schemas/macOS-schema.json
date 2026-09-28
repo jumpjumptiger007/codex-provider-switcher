@@ -177,6 +177,18 @@
       "description": "Permission identifier",
       "oneOf": [
         {
+          "description": "Enables the get_credential_status command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-get-credential-status",
+          "markdownDescription": "Enables the get_credential_status command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the get_models command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-get-models",
+          "markdownDescription": "Enables the get_models command without any pre-configured scope."
+        },
+        {
           "description": "Enables the get_providers command without any pre-configured scope.",
           "type": "string",
           "const": "allow-get-providers",
@@ -189,6 +201,30 @@
           "markdownDescription": "Enables the get_status command without any pre-configured scope."
         },
         {
+          "description": "Enables the save_credential command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-save-credential",
+          "markdownDescription": "Enables the save_credential command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the switch_model command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-switch-model",
+          "markdownDescription": "Enables the switch_model command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the get_credential_status command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-get-credential-status",
+          "markdownDescription": "Denies the get_credential_status command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the get_models command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-get-models",
+          "markdownDescription": "Denies the get_models command without any pre-configured scope."
+        },
+        {
           "description": "Denies the get_providers command without any pre-configured scope.",
           "type": "string",
           "const": "deny-get-providers",
@@ -199,6 +235,18 @@
           "type": "string",
           "const": "deny-get-status",
           "markdownDescription": "Denies the get_status command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the save_credential command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-save-credential",
+          "markdownDescription": "Denies the save_credential command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the switch_model command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-switch-model",
+          "markdownDescription": "Denies the switch_model command without any pre-configured scope."
         },
         {
           "description": "Default core plugins set.\n#### This default permission set includes:\n\n- `core:path:default`\n- `core:event:default`\n- `core:window:default`\n- `core:webview:default`\n- `core:app:default`\n- `core:image:default`\n- `core:resources:default`\n- `core:menu:default`\n- `core:tray:default`",

@@ -23,6 +23,22 @@ pub struct StatusDto {
     pub transport: Option<String>,
 }
 
+/// Desktop-owned credential state; credential material is never serialized.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CredentialStatusDto {
+    pub provider_id: String,
+    pub status: String,
+}
+
+/// A provider model ID and the exact CPS target used to switch to it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ModelDto {
+    pub id: String,
+    pub target: String,
+}
+
 /// Safe, stable error contract for fallible Desktop commands.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]

@@ -25,3 +25,13 @@ export interface Status {
   knownProvider: boolean;
   transport: ProviderTransport | null;
 }
+
+export interface CredentialStatus {
+  providerId: string;
+  status: "present" | "missing" | "not_applicable";
+}
+
+export interface Model {
+  id: string;
+  target: string;
+}

@@ -396,6 +396,132 @@ p {
   white-space: nowrap;
 }
 
+.workflow-panel {
+  display: grid;
+  gap: 9px;
+  margin-top: 14px;
+  padding-top: 13px;
+  border-top: 1px solid #edf0f2;
+}
+
+.workflow-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.workflow-panel h4 {
+  margin: 0;
+  color: #34414e;
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.credential-state {
+  color: #276249;
+  font-size: 10px;
+  font-weight: 650;
+}
+
+.workflow-hint {
+  margin: 0;
+  color: #788591;
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.credential-form,
+.credential-actions {
+  display: flex;
+  align-items: flex-end;
+  gap: 9px;
+}
+
+.credential-form {
+  flex-wrap: wrap;
+}
+
+.credential-actions {
+  flex-wrap: wrap;
+}
+
+.field-label {
+  display: grid;
+  min-width: 0;
+  flex: 1 1 220px;
+  gap: 5px;
+  color: #566472;
+  font-size: 10px;
+  font-weight: 620;
+}
+
+.field-label input,
+.field-label select {
+  width: 100%;
+  min-height: 34px;
+  padding: 7px 9px;
+  border: 1px solid #d5dde4;
+  border-radius: 7px;
+  color: #283541;
+  background: #fff;
+  font: inherit;
+  font-size: 11px;
+}
+
+.field-label input:focus-visible,
+.field-label select:focus-visible {
+  outline: 3px solid #74a5d4;
+  outline-offset: 2px;
+}
+
+.primary-button {
+  min-height: 34px;
+  padding: 7px 11px;
+  border: 1px solid #456b89;
+  border-radius: 7px;
+  color: #fff;
+  background: #456b89;
+  cursor: pointer;
+  font-size: 11px;
+  font-weight: 620;
+  white-space: nowrap;
+}
+
+.primary-button:hover:not(:disabled) {
+  border-color: #355a78;
+  background: #355a78;
+}
+
+.primary-button:focus-visible,
+.workflow-panel button:focus-visible {
+  outline: 3px solid #74a5d4;
+  outline-offset: 2px;
+}
+
+.primary-button:disabled,
+.text-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.workflow-error,
+.workflow-success {
+  margin: 0;
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.workflow-error {
+  color: #8a3b36;
+}
+
+.workflow-success {
+  margin-top: 12px;
+  color: #276249;
+  font-weight: 620;
+}
+
 .details-empty {
   padding: 17px 15px;
   border: 1px solid #dce2e8;
