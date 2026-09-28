@@ -1,0 +1,20 @@
+# Keep this comment and unknown configuration intact.
+model = "gpt-4.1"
+model_provider = "openai"
+custom_key = "unchanged"
+
+[model_providers.openai]
+name = "OpenAI"
+base_url = "https://api.openai.com/v1"
+
+[mcp_servers.local]
+command = "example"
+
+[projects."/tmp/demo"]
+trust_level = "trusted"
+
+[features]
+experimental = true
+
+[sandbox_workspace_write]
+writable_roots = ["/tmp"]
