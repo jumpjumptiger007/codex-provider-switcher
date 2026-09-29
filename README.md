@@ -11,7 +11,7 @@ The registry includes these provider types:
 
 The registry records DeepSeek as verified-basic and xAI and OpenRouter as unverified. Native provider entries are marked verified by the registry, while their individual model capabilities remain unknown. Registry status is not a claim that every model has been tested or will work.
 
-Provider names and logos are trademarks of their respective owners. Their use identifies supported services and does not imply endorsement or affiliation. The desktop UI uses the [official OpenAI Blossom mark](https://cdn.openai.com/brand/openai-logos.zip), [LM Studio color app icon](https://lmstudio.ai/assets/marketing/brand/download/logos/lm-studio-icon-color.svg), and [OpenRouter Ink glyph](https://openrouter.ai/brand/logos/transparent/glyph/svg/glyph-ink.svg).
+Provider names are trademarks of their respective owners. Their use identifies supported services and does not imply endorsement or affiliation.
 
 ## Commands
 
