@@ -86,7 +86,7 @@ from that artwork. See `apps/desktop/RC2-REPORT.md` for validation details.
 
 ### macOS DMG release
 
-The v0.1.0 DMG is distributed outside the Mac App Store and is **ad-hoc signed
+The v0.1.1 DMG is distributed outside the Mac App Store and is **ad-hoc signed
 and not notarized**. This release does not use paid Apple Developer Program
 distribution credentials, and has no Developer ID signature or Apple
 notarization. macOS may block the first launch. The warning alone does not

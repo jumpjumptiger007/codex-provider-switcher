@@ -503,7 +503,7 @@ dependencies = [
 
 [[package]]
 name = "cps"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "clap",
  "reqwest 0.12.28",
@@ -518,7 +518,7 @@ dependencies = [
 
 [[package]]
 name = "cps-desktop"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "cps",
  "serde",

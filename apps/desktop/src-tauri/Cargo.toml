@@ -1,6 +1,6 @@
 [package]
 name = "cps-desktop"
-version = "0.1.0"
+version = "0.1.1"
 description = "Switch Codex providers and models securely from a native macOS app."
 edition = "2021"
 rust-version = "1.85"

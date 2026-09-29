@@ -402,7 +402,7 @@ mod tests {
         assert_eq!(help_error.kind(), ErrorKind::DisplayHelp);
         let version_error = Cli::try_parse_from(["cps", "--version"]).unwrap_err();
         assert_eq!(version_error.kind(), ErrorKind::DisplayVersion);
-        assert_eq!(version_error.to_string(), "cps 0.1.0\n");
+        assert_eq!(version_error.to_string(), "cps 0.1.1\n");
     }
 
     #[test]
