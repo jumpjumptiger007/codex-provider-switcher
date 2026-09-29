@@ -356,7 +356,11 @@ export default function App() {
           <ul className="provider-grid" aria-label="Choose a provider to inspect">
             {providers.map((provider) => {
               const isSelected = selectedProvider === provider.id;
-              const isActive = !statusLoading && !statusError && status?.knownProvider && status.provider === provider.id;
+              const isActive =
+                !statusLoading &&
+                !statusError &&
+                status?.knownProvider &&
+                status.provider === provider.id;
               return (
                 <li key={provider.id}>
                   <button
@@ -371,9 +375,18 @@ export default function App() {
                       <span>{transportLabel(provider.transport)}</span>
                     </span>
                     <span className="provider-card-states">
-                      {isActive && <span className="state-pill active-pill">Active</span>}
-                      {isSelected && <span className="state-pill selected-pill">Selected</span>}
+                      {isActive && (
+                        <span className="provider-active-state">
+                          <span className="state-dot" aria-hidden="true" />
+                          Active
+                        </span>
+                      )}
                     </span>
+                    {isSelected && (
+                      <span className="selected-indicator" aria-hidden="true">
+                        ✓
+                      </span>
+                    )}
                   </button>
                 </li>
               );
