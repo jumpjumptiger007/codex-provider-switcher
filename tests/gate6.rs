@@ -173,21 +173,37 @@ fn status_reports_blank_model_as_typed_error() {
 }
 
 #[test]
-fn status_reports_missing_model_provider_as_typed_error() {
+fn status_defaults_missing_model_provider_to_openai() {
     let directory = tempdir().unwrap();
     let path = directory.path().join("config.toml");
-    write_config(&path, b"model = \"gpt-5\"\n");
-    assert!(matches!(
-        config::read_active_selection(&path),
-        Err(ConfigError::MissingActiveProvider)
-    ));
+    write_config(&path, b"model = \"gpt-6-luna\"\n");
+
+    let selection = config::read_active_selection(&path).unwrap();
+
+    assert_eq!(selection.model, "gpt-6-luna");
+    assert_eq!(selection.model_provider, "openai");
+}
+
+#[test]
+fn status_preserves_an_explicit_valid_model_provider() {
+    let directory = tempdir().unwrap();
+    let path = directory.path().join("config.toml");
+    write_config(
+        &path,
+        b"model = \"gpt-6-luna\"\nmodel_provider = \"custom-local\"\n",
+    );
+
+    let selection = config::read_active_selection(&path).unwrap();
+
+    assert_eq!(selection.model, "gpt-6-luna");
+    assert_eq!(selection.model_provider, "custom-local");
 }
 
 #[test]
 fn status_reports_non_string_model_provider_as_typed_error() {
     let directory = tempdir().unwrap();
     let path = directory.path().join("config.toml");
-    write_config(&path, b"model = \"gpt-5\"\nmodel_provider = false\n");
+    write_config(&path, b"model = \"gpt-6-luna\"\nmodel_provider = 123\n");
     assert!(matches!(
         config::read_active_selection(&path),
         Err(ConfigError::InvalidActiveProvider)
@@ -198,11 +214,16 @@ fn status_reports_non_string_model_provider_as_typed_error() {
 fn status_reports_blank_model_provider_as_typed_error() {
     let directory = tempdir().unwrap();
     let path = directory.path().join("config.toml");
-    write_config(&path, b"model = \"gpt-5\"\nmodel_provider = \" \"\n");
-    assert!(matches!(
-        config::read_active_selection(&path),
-        Err(ConfigError::EmptyActiveProvider)
-    ));
+    for provider in ["", " "] {
+        write_config(
+            &path,
+            format!("model = \"gpt-6-luna\"\nmodel_provider = \"{provider}\"\n").as_bytes(),
+        );
+        assert!(matches!(
+            config::read_active_selection(&path),
+            Err(ConfigError::EmptyActiveProvider)
+        ));
+    }
 }
 
 #[test]

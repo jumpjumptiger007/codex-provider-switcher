@@ -259,7 +259,6 @@ fn selection_error_summary(error: &ConfigError) -> &'static str {
         ConfigError::MissingActiveModel => "model is missing",
         ConfigError::InvalidActiveModel => "model must be a string",
         ConfigError::EmptyActiveModel => "model is blank",
-        ConfigError::MissingActiveProvider => "model_provider is missing",
         ConfigError::InvalidActiveProvider => "model_provider must be a string",
         ConfigError::EmptyActiveProvider => "model_provider is blank",
         _ => "could not inspect active selection",

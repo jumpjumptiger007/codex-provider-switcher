@@ -480,22 +480,34 @@ fn active_provider_read_is_byte_preserving_and_creates_no_backup() {
 }
 
 #[test]
-fn active_provider_read_reports_missing_invalid_and_empty_values() {
+fn active_provider_read_reports_invalid_and_empty_values() {
     let directory = tempdir().unwrap();
     let config_path = directory.path().join("config.toml");
-    for (contents, expected) in [
-        ("model = 'gpt-5'\n", 0),
-        ("model_provider = 42\n", 1),
-        ("model_provider = ''\n", 2),
-    ] {
+    for (contents, expected) in [("model_provider = 42\n", 1), ("model_provider = ''\n", 2)] {
         std::fs::write(&config_path, contents).unwrap();
         let error = config::read_active_provider(&config_path).unwrap_err();
         assert!(matches!(
             (expected, error),
-            (0, ConfigError::MissingActiveProvider)
-                | (1, ConfigError::InvalidActiveProvider)
-                | (2, ConfigError::EmptyActiveProvider)
+            (1, ConfigError::InvalidActiveProvider) | (2, ConfigError::EmptyActiveProvider)
         ));
+    }
+}
+
+#[test]
+fn active_provider_read_defaults_only_an_omitted_provider() {
+    let directory = tempdir().unwrap();
+    let config_path = directory.path().join("config.toml");
+    for (contents, expected) in [
+        ("model = 'gpt-6-luna'\n", "openai"),
+        ("model_provider = ' custom-local '\n", " custom-local "),
+        ("model_provider = ' '\n", " "),
+    ] {
+        std::fs::write(&config_path, contents).unwrap();
+        assert_eq!(
+            config::read_active_provider(&config_path).unwrap(),
+            expected
+        );
+        assert_eq!(std::fs::read_to_string(&config_path).unwrap(), contents);
     }
 }
 
@@ -522,6 +534,15 @@ fn explicit_models_provider_does_not_read_config_and_default_uses_active_provide
     );
     assert_eq!(std::fs::read(&config_path).unwrap(), before);
     assert_eq!(std::fs::read_dir(directory.path()).unwrap().count(), 1);
+
+    std::fs::write(&config_path, "model = 'gpt-6-luna'\n").unwrap();
+    assert_eq!(
+        resolve_models_provider(None, || {
+            config::read_active_provider(&config_path).map_err(ApplicationError::Config)
+        })
+        .unwrap(),
+        "openai"
+    );
 }
 
 #[test]

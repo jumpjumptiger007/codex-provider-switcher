@@ -197,6 +197,12 @@ fn config_and_selection_errors_are_reports_not_early_failures() {
         }
     );
 
+    write(&path, b"model = \"gpt-6-luna\"\n");
+    let report = application::doctor(&ProviderRegistry::initial(), None, &path);
+    assert_eq!(report.findings[1].check, "selection");
+    assert_eq!(report.findings[1].severity, DiagnosticSeverity::Ok);
+    assert_eq!(report.findings[1].message, "openai/gpt-6-luna");
+
     for (contents, message) in [
         (
             b"model = 1\nmodel_provider = \"openai\"\n".as_slice(),
@@ -205,10 +211,6 @@ fn config_and_selection_errors_are_reports_not_early_failures() {
         (
             b"model = \"  \"\nmodel_provider = \"openai\"\n".as_slice(),
             "model is blank",
-        ),
-        (
-            b"model = \"gpt-5\"\n".as_slice(),
-            "model_provider is missing",
         ),
         (
             b"model = \"gpt-5\"\nmodel_provider = false\n".as_slice(),

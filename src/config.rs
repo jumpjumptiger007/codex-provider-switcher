@@ -77,7 +77,8 @@ pub fn validate_config(config_path: impl AsRef<Path>) -> Result<(), ConfigError>
     validate_config_contents(path, &bytes)
 }
 
-/// Read the explicitly active model and provider without opening a mutation transaction.
+/// Read the active model and provider without opening a mutation transaction.
+/// Codex defaults to OpenAI when no model_provider is configured.
 pub fn read_active_selection(
     config_path: impl AsRef<Path>,
 ) -> Result<ActiveConfigSelection, ConfigError> {
@@ -102,11 +103,10 @@ pub fn read_active_selection(
     if model.trim().is_empty() {
         return Err(ConfigError::EmptyActiveModel);
     }
-    let model_provider = document
-        .get("model_provider")
-        .ok_or(ConfigError::MissingActiveProvider)?
-        .as_str()
-        .ok_or(ConfigError::InvalidActiveProvider)?;
+    let model_provider = match document.get("model_provider") {
+        Some(value) => value.as_str().ok_or(ConfigError::InvalidActiveProvider)?,
+        None => "openai",
+    };
     if model_provider.trim().is_empty() {
         return Err(ConfigError::EmptyActiveProvider);
     }
@@ -117,17 +117,17 @@ pub fn read_active_selection(
     })
 }
 
-/// Read the explicitly active provider without opening a mutation transaction.
+/// Read the active provider without opening a mutation transaction.
+/// Codex defaults to OpenAI when no model_provider is configured.
 pub fn read_active_provider(config_path: impl AsRef<Path>) -> Result<String, ConfigError> {
     let path = config_path.as_ref();
     let bytes = read_config(path)?;
     let text = std::str::from_utf8(&bytes).map_err(ConfigError::Utf8)?;
     let document = text.parse::<DocumentMut>().map_err(ConfigError::Toml)?;
-    let provider = document
-        .get("model_provider")
-        .ok_or(ConfigError::MissingActiveProvider)?
-        .as_str()
-        .ok_or(ConfigError::InvalidActiveProvider)?;
+    let provider = match document.get("model_provider") {
+        Some(value) => value.as_str().ok_or(ConfigError::InvalidActiveProvider)?,
+        None => "openai",
+    };
     if provider.is_empty() {
         return Err(ConfigError::EmptyActiveProvider);
     }

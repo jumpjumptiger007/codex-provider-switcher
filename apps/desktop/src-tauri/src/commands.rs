@@ -309,7 +309,6 @@ fn map_status_error(error: ApplicationError) -> DesktopError {
             ConfigError::MissingActiveModel
             | ConfigError::InvalidActiveModel
             | ConfigError::EmptyActiveModel
-            | ConfigError::MissingActiveProvider
             | ConfigError::InvalidActiveProvider
             | ConfigError::EmptyActiveProvider
             | ConfigError::InvalidConfigUtf8 { .. }
@@ -533,6 +532,18 @@ mod tests {
 
         assert_eq!(status.provider, "openrouter");
         assert_eq!(status.transport.as_deref(), Some("responses"));
+        assert!(status.known_provider);
+    }
+
+    #[test]
+    fn status_defaults_an_omitted_provider_to_openai() {
+        let fixture = ConfigFixture::new("model = \"gpt-6-luna\"\n");
+
+        let status = get_status_at(&fixture.config_path).unwrap();
+
+        assert_eq!(status.provider, "openai");
+        assert_eq!(status.model, "gpt-6-luna");
+        assert_eq!(status.target, "openai/gpt-6-luna");
         assert!(status.known_provider);
     }
 
